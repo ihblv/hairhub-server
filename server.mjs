@@ -1,4 +1,4 @@
-// server.mjs — Formula Guru 2
+// server.mjs — Formula Guru 2 (updated for higher accuracy)
 // Category-aware (Permanent / Demi / Semi) with manufacturer mixing rules
 // Adds post-processing to enforce missing ratios/dev names (e.g., Shades EQ 1:1)
 // ------------------------------------------------------------------------
@@ -330,8 +330,10 @@ Goal: If the photo shows greys at the root, estimate grey % (<25%, 25–50%, 50�
 
 Rules:
 - Anchor coverage with a natural/neutral series for ${brand}; add supportive tone to match the photo.
-- Include **developer volume and the exact ratio** in the ROOTS formula (e.g., "6N + 6.3 (${BRAND_RULES[brand]?.ratio || '1:1'}) with 20 vol <developer name>").
-- Provide a compatible mids/ends plan (refresh vs. band control).
+- **Respect the observed natural depth/level in the photo.**
+- **Do NOT suggest formulas more than two levels lighter or darker than that observed depth.**
+- Alternates (cooler/warmer) must remain within **±2 levels** of the detected level and differ mainly by tone, not by large level jumps.
+- Include developer volume and the exact ratio in the ROOTS formula.
 - Processing must call out: sectioning, application order (roots → mids → ends), timing, and rinse/aftercare.
 - Return exactly 3 scenarios: Primary, Alternate (cooler), Alternate (warmer).
 
@@ -348,7 +350,9 @@ ${ratioGuard}
 
 Rules:
 - **No developer** in formulas (RTU where applicable). Use brand Clear/diluter for sheerness.
-- Do not promise full grey coverage; you may blend/soften the appearance of grey.
+- Do not promise full grey coverage.
+- **Keep formulas within ±2 levels of the natural depth shown in the photo.** No extreme level jumps.
+- Alternates (cooler/warmer) must be realistic tone variations at that depth.
 - Return 3 scenarios (Primary / Alternate cooler / Alternate warmer).
 
 ${SHARED_JSON_SHAPE}
@@ -363,7 +367,9 @@ CATEGORY = DEMI (gloss/toner; brand-consistent behavior)
 ${ratioGuard}
 
 Rules:
-- Gloss/toner plans only from ${brand}. In **every formula**, include the ratio and the **developer/activator name** (e.g., "09V + 09T (1:1) with Shades EQ Processing Solution").
+- Gloss/toner plans only from ${brand}. In every formula, include the ratio and the developer/activator name (e.g., "09V + 09T (1:1) with Shades EQ Processing Solution").
+- **Match the actual depth/level observed in the photo.** Do **not** suggest tones more than **±2 levels** away from the observed shade unless banding correction is explicitly needed (then explain).
+- Alternates (cooler/warmer) should be realistic tone shifts at the **same depth**, not extreme jumps (e.g., do not propose 09V if the hair is clearly level 1).
 - Keep processing up to ~20 minutes unless brand guidance requires otherwise.
 - No lift promises; no grey-coverage claims.
 - Return exactly 3 scenarios (Primary / Alternate cooler / Alternate warmer).
@@ -466,4 +472,3 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log('🔑 API key loaded.');
   }
 });
-
