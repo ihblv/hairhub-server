@@ -467,3 +467,89 @@ app.listen(PORT, "0.0.0.0", () => {
   }
 });
 
+
+
+// -------------------- Client-AI Namespace --------------------
+
+// POST /client-ai/compose-message
+app.post('/client-ai/compose-message', async (req, res) => {
+  try {
+    const { type, tone, client, stylist, notes } = req.body;
+    const prompt = {
+      role: "system",
+      content: "You are a salon assistant AI. Generate a concise, salon-appropriate message strictly in JSON."
+    };
+    const userPrompt = {
+      role: "user",
+      content: JSON.stringify({
+        task: "compose-message",
+        type, tone, client, stylist, notes
+      })
+    };
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.4,
+      response_format: { type: "json_object" },
+      messages: [prompt, userPrompt]
+    });
+    const text = response.choices[0].message.content;
+    res.json(JSON.parse(text));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "compose-message failed" });
+  }
+});
+
+// POST /client-ai/summarize-consultation
+app.post('/client-ai/summarize-consultation', async (req, res) => {
+  try {
+    const { history, tags } = req.body;
+    const prompt = {
+      role: "system",
+      content: "You are a salon AI. Summarize consultations concisely and return JSON with summary and extracted_tags."
+    };
+    const userPrompt = {
+      role: "user",
+      content: JSON.stringify({ task: "summarize-consultation", history, tags })
+    };
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+      messages: [prompt, userPrompt]
+    });
+    const text = response.choices[0].message.content;
+    res.json(JSON.parse(text));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "summarize-consultation failed" });
+  }
+});
+
+// POST /client-ai/retail-suggest
+app.post('/client-ai/retail-suggest', async (req, res) => {
+  try {
+    const { serviceType, maintenanceGoal, budgetTier } = req.body;
+    const prompt = {
+      role: "system",
+      content: "You are a salon AI. Suggest retail products concisely. Respond strictly in JSON with an array of suggestions."
+    };
+    const userPrompt = {
+      role: "user",
+      content: JSON.stringify({ task: "retail-suggest", serviceType, maintenanceGoal, budgetTier })
+    };
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.5,
+      response_format: { type: "json_object" },
+      messages: [prompt, userPrompt]
+    });
+    const text = response.choices[0].message.content;
+    res.json(JSON.parse(text));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "retail-suggest failed" });
+  }
+});
+
+// --------------------------------------------------------------
