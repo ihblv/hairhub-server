@@ -1,0 +1,19 @@
+{
+  "name": "hairhub-server",
+  "version": "1.0.0",
+  "description": "Formula Guru / HairHub backend server",
+  "main": "server.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "multer": "^2.0.0",
+    "openai": "^4.104.0"
+  },
+  "author": "Your Name",
+  "license": "MIT"
+}

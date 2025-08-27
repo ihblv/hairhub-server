@@ -1,0 +1,1002 @@
+[
+  {
+    "code": "010T",
+    "family": "T",
+    "name": "Platinum",
+    "level": 10,
+    "undertone": "blue/violet",
+    "notes": "Listed as 010T Platinum (& Bonder Inside)"
+  },
+  {
+    "code": "010NA",
+    "family": "NA",
+    "name": "Marble",
+    "level": 10,
+    "undertone": "blue/violet (cool neutral)",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "010P",
+    "family": "P",
+    "name": "Ivory Pearl",
+    "level": 10,
+    "undertone": "violet/blue",
+    "notes": "(& Bonder Inside)"
+  },
+  {
+    "code": "010N",
+    "family": "N",
+    "name": "Delicate Natural",
+    "level": 10,
+    "undertone": "neutral",
+    "notes": "(& Bonder Inside)"
+  },
+  {
+    "code": "010AG",
+    "family": "AG",
+    "name": "Misty Beige",
+    "level": 10,
+    "undertone": "soft beige",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "010NB",
+    "family": "NB",
+    "name": "Caramel Cloud",
+    "level": 10,
+    "undertone": "natural/brown",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "010VG",
+    "family": "VG",
+    "name": "Baby",
+    "level": 10,
+    "undertone": "violet/gold",
+    "notes": "(& Bonder Inside)"
+  },
+  {
+    "code": "010NW",
+    "family": "NW",
+    "name": "Iced Piña",
+    "level": 10,
+    "undertone": "neutral/warm",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "010GI",
+    "family": "GI",
+    "name": "Tahitian Sand",
+    "level": 10,
+    "undertone": "gold/violet",
+    "notes": "(& Bonder Inside)"
+  },
+  {
+    "code": "010G",
+    "family": "G",
+    "name": "Lemon Icing",
+    "level": 10,
+    "undertone": "gold",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "010WG",
+    "family": "WG",
+    "name": "Honey Gold",
+    "level": 10,
+    "undertone": "warm gold",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "010AA",
+    "family": "AA",
+    "name": "Butternut",
+    "level": 10,
+    "undertone": "blue/green (controls orange)",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "010GRo",
+    "family": "GRo",
+    "name": "Sparkling Wine",
+    "level": 10,
+    "undertone": "gold/rose",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "010VV",
+    "family": "VV",
+    "name": "Lavender Ice",
+    "level": 10,
+    "undertone": "violet",
+    "notes": "(& Bonder Inside)"
+  },
+  {
+    "code": "09T",
+    "family": "T",
+    "name": "Chrome",
+    "level": 9,
+    "undertone": "blue/violet",
+    "notes": "(& Bonder Inside)"
+  },
+  {
+    "code": "09B",
+    "family": "B",
+    "name": "Sterling",
+    "level": 9,
+    "undertone": "silver/blue",
+    "notes": ""
+  },
+  {
+    "code": "09NA",
+    "family": "NA",
+    "name": "Mist",
+    "level": 9,
+    "undertone": "blue/violet (cool neutral)",
+    "notes": ""
+  },
+  {
+    "code": "09P",
+    "family": "P",
+    "name": "Opal Glow",
+    "level": 9,
+    "undertone": "violet/blue",
+    "notes": "(& Bonder Inside)"
+  },
+  {
+    "code": "09M",
+    "family": "M",
+    "name": "Sand Dunes",
+    "level": 9,
+    "undertone": "brown/mahogany",
+    "notes": ""
+  },
+  {
+    "code": "09N",
+    "family": "N",
+    "name": "Café au Lait",
+    "level": 9,
+    "undertone": "neutral",
+    "notes": "(& Bonder Inside)"
+  },
+  {
+    "code": "09AG",
+    "family": "AG",
+    "name": "Glossy Greige",
+    "level": 9,
+    "undertone": "soft beige",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "09NB",
+    "family": "NB",
+    "name": "Irish Crème",
+    "level": 9,
+    "undertone": "natural/brown",
+    "notes": ""
+  },
+  {
+    "code": "09VG",
+    "family": "VG",
+    "name": "Iridescence",
+    "level": 9,
+    "undertone": "violet/gold",
+    "notes": ""
+  },
+  {
+    "code": "09NW",
+    "family": "NW",
+    "name": "Cream Soda",
+    "level": 9,
+    "undertone": "neutral/warm",
+    "notes": ""
+  },
+  {
+    "code": "09GI",
+    "family": "GI",
+    "name": "Hamptons",
+    "level": 9,
+    "undertone": "gold/violet",
+    "notes": ""
+  },
+  {
+    "code": "09GB",
+    "family": "GB",
+    "name": "Butter Cream",
+    "level": 9,
+    "undertone": "gold/beige",
+    "notes": ""
+  },
+  {
+    "code": "09G",
+    "family": "G",
+    "name": "Vanilla Crème",
+    "level": 9,
+    "undertone": "gold",
+    "notes": ""
+  },
+  {
+    "code": "09AA",
+    "family": "AA",
+    "name": "Papaya",
+    "level": 9,
+    "undertone": "blue/green (controls orange)",
+    "notes": ""
+  },
+  {
+    "code": "09RB",
+    "family": "RB",
+    "name": "Blush",
+    "level": 9,
+    "undertone": "red/brown",
+    "notes": ""
+  },
+  {
+    "code": "09GRo",
+    "family": "GRo",
+    "name": "Blush Spritz",
+    "level": 9,
+    "undertone": "gold/rose",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "09CR",
+    "family": "CR",
+    "name": "Summer Sunshine",
+    "level": 9,
+    "undertone": "copper/red",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "09VRo",
+    "family": "VRo",
+    "name": "Rosé",
+    "level": 9,
+    "undertone": "violet/rose",
+    "notes": ""
+  },
+  {
+    "code": "09V",
+    "family": "V",
+    "name": "Platinum Ice",
+    "level": 9,
+    "undertone": "violet",
+    "notes": "(& Bonder Inside)"
+  },
+  {
+    "code": "09VV",
+    "family": "VV",
+    "name": "Lilac Ice",
+    "level": 9,
+    "undertone": "violet",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "08T",
+    "family": "T",
+    "name": "Silver",
+    "level": 8,
+    "undertone": "blue/violet",
+    "notes": ""
+  },
+  {
+    "code": "08GN",
+    "family": "GN",
+    "name": "Ivy",
+    "level": 8,
+    "undertone": "blue/green",
+    "notes": ""
+  },
+  {
+    "code": "08VB",
+    "family": "VB",
+    "name": "Violet Frost",
+    "level": 8,
+    "undertone": "violet/blue",
+    "notes": ""
+  },
+  {
+    "code": "08NA",
+    "family": "NA",
+    "name": "Volcanic",
+    "level": 8,
+    "undertone": "blue/violet (cool neutral)",
+    "notes": ""
+  },
+  {
+    "code": "08N",
+    "family": "N",
+    "name": "Mojave",
+    "level": 8,
+    "undertone": "neutral",
+    "notes": ""
+  },
+  {
+    "code": "08VG",
+    "family": "VG",
+    "name": "Gilded Taupe",
+    "level": 8,
+    "undertone": "violet/gold",
+    "notes": ""
+  },
+  {
+    "code": "08GI",
+    "family": "GI",
+    "name": "St. Barths",
+    "level": 8,
+    "undertone": "gold/violet",
+    "notes": ""
+  },
+  {
+    "code": "08GG",
+    "family": "GG",
+    "name": "Gold Dip",
+    "level": 8,
+    "undertone": "gold/gold",
+    "notes": ""
+  },
+  {
+    "code": "08WG",
+    "family": "WG",
+    "name": "Golden Apricot",
+    "level": 8,
+    "undertone": "warm gold",
+    "notes": ""
+  },
+  {
+    "code": "08C",
+    "family": "C",
+    "name": "Cayenne",
+    "level": 8,
+    "undertone": "copper",
+    "notes": ""
+  },
+  {
+    "code": "08CR",
+    "family": "CR",
+    "name": "Sunrise",
+    "level": 8,
+    "undertone": "copper/red",
+    "notes": ""
+  },
+  {
+    "code": "08VRo",
+    "family": "VRo",
+    "name": "Rose Quartz",
+    "level": 8,
+    "undertone": "violet/rose",
+    "notes": ""
+  },
+  {
+    "code": "08V",
+    "family": "V",
+    "name": "Iridescent Quartz",
+    "level": 8,
+    "undertone": "violet",
+    "notes": ""
+  },
+  {
+    "code": "07T",
+    "family": "T",
+    "name": "Steel",
+    "level": 7,
+    "undertone": "blue/violet",
+    "notes": ""
+  },
+  {
+    "code": "07VB",
+    "family": "VB",
+    "name": "Violet Star",
+    "level": 7,
+    "undertone": "violet/blue",
+    "notes": ""
+  },
+  {
+    "code": "07NA",
+    "family": "NA",
+    "name": "Pewter",
+    "level": 7,
+    "undertone": "blue/violet (cool neutral)",
+    "notes": ""
+  },
+  {
+    "code": "07P",
+    "family": "P",
+    "name": "Mother of Pearl",
+    "level": 7,
+    "undertone": "violet/blue",
+    "notes": ""
+  },
+  {
+    "code": "07M",
+    "family": "M",
+    "name": "Driftwood",
+    "level": 7,
+    "undertone": "brown/mahogany",
+    "notes": ""
+  },
+  {
+    "code": "07NCh",
+    "family": "NCh",
+    "name": "Fondue",
+    "level": 7,
+    "undertone": "chocolate (brown)",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "07N",
+    "family": "N",
+    "name": "Mirage",
+    "level": 7,
+    "undertone": "neutral",
+    "notes": ""
+  },
+  {
+    "code": "07AG",
+    "family": "AG",
+    "name": "Smokey Beige",
+    "level": 7,
+    "undertone": "soft beige",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "07NB",
+    "family": "NB",
+    "name": "Chestnut",
+    "level": 7,
+    "undertone": "natural/brown",
+    "notes": ""
+  },
+  {
+    "code": "07NW",
+    "family": "NW",
+    "name": "Milk Tea",
+    "level": 7,
+    "undertone": "neutral/warm",
+    "notes": ""
+  },
+  {
+    "code": "07GB",
+    "family": "GB",
+    "name": "Butterscotch",
+    "level": 7,
+    "undertone": "gold/beige",
+    "notes": ""
+  },
+  {
+    "code": "07G",
+    "family": "G",
+    "name": "Saffron",
+    "level": 7,
+    "undertone": "gold",
+    "notes": ""
+  },
+  {
+    "code": "07C",
+    "family": "C",
+    "name": "Curry",
+    "level": 7,
+    "undertone": "copper",
+    "notes": ""
+  },
+  {
+    "code": "07AA",
+    "family": "AA",
+    "name": "Turmeric",
+    "level": 7,
+    "undertone": "blue/green (controls orange)",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "07CB",
+    "family": "CB",
+    "name": "Spicestone",
+    "level": 7,
+    "undertone": "copper/brown",
+    "notes": ""
+  },
+  {
+    "code": "07GRo",
+    "family": "GRo",
+    "name": "Golden Fizz",
+    "level": 7,
+    "undertone": "gold/rose",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "07CC",
+    "family": "CC",
+    "name": "Urban Fever",
+    "level": 7,
+    "undertone": "copper/copper",
+    "notes": ""
+  },
+  {
+    "code": "07RR",
+    "family": "RR",
+    "name": "Flame",
+    "level": 7,
+    "undertone": "red/red",
+    "notes": ""
+  },
+  {
+    "code": "07V",
+    "family": "V",
+    "name": "Crushed Amethyst",
+    "level": 7,
+    "undertone": "violet",
+    "notes": ""
+  },
+  {
+    "code": "06T",
+    "family": "T",
+    "name": "Iron",
+    "level": 6,
+    "undertone": "blue/violet",
+    "notes": ""
+  },
+  {
+    "code": "06GN",
+    "family": "GN",
+    "name": "Moss",
+    "level": 6,
+    "undertone": "blue/green",
+    "notes": ""
+  },
+  {
+    "code": "06ABn",
+    "family": "ABn",
+    "name": "Brown Smoke",
+    "level": 6,
+    "undertone": "blue ash/brown",
+    "notes": ""
+  },
+  {
+    "code": "06VB",
+    "family": "VB",
+    "name": "Violet Lagoon",
+    "level": 6,
+    "undertone": "violet/blue",
+    "notes": ""
+  },
+  {
+    "code": "06NA",
+    "family": "NA",
+    "name": "Granite",
+    "level": 6,
+    "undertone": "blue/violet (cool neutral)",
+    "notes": ""
+  },
+  {
+    "code": "06NCh",
+    "family": "NCh",
+    "name": "Ganache",
+    "level": 6,
+    "undertone": "chocolate (brown)",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "06N",
+    "family": "N",
+    "name": "Moroccan Sand",
+    "level": 6,
+    "undertone": "neutral",
+    "notes": ""
+  },
+  {
+    "code": "06NB",
+    "family": "NB",
+    "name": "Brandy",
+    "level": 6,
+    "undertone": "natural/brown",
+    "notes": ""
+  },
+  {
+    "code": "06GI",
+    "family": "GI",
+    "name": "Tenerife",
+    "level": 6,
+    "undertone": "gold/violet",
+    "notes": ""
+  },
+  {
+    "code": "06GB",
+    "family": "GB",
+    "name": "Toffee",
+    "level": 6,
+    "undertone": "gold/beige",
+    "notes": ""
+  },
+  {
+    "code": "06G",
+    "family": "G",
+    "name": "St. Tropez",
+    "level": 6,
+    "undertone": "gold",
+    "notes": ""
+  },
+  {
+    "code": "06GG",
+    "family": "GG",
+    "name": "Midas Touch",
+    "level": 6,
+    "undertone": "gold/gold",
+    "notes": ""
+  },
+  {
+    "code": "06WG",
+    "family": "WG",
+    "name": "Mango",
+    "level": 6,
+    "undertone": "warm gold",
+    "notes": ""
+  },
+  {
+    "code": "06AA",
+    "family": "AA",
+    "name": "Bonfire",
+    "level": 6,
+    "undertone": "blue/green (controls red/orange)",
+    "notes": ""
+  },
+  {
+    "code": "06CB",
+    "family": "CB",
+    "name": "Amber Glaze",
+    "level": 6,
+    "undertone": "copper/brown",
+    "notes": ""
+  },
+  {
+    "code": "06RB",
+    "family": "RB",
+    "name": "Cherry Cola",
+    "level": 6,
+    "undertone": "red/brown",
+    "notes": ""
+  },
+  {
+    "code": "06CR",
+    "family": "CR",
+    "name": "Sunset",
+    "level": 6,
+    "undertone": "copper/red",
+    "notes": ""
+  },
+  {
+    "code": "06R",
+    "family": "R",
+    "name": "Rocket Fire",
+    "level": 6,
+    "undertone": "red",
+    "notes": ""
+  },
+  {
+    "code": "06RR",
+    "family": "RR",
+    "name": "Blaze",
+    "level": 6,
+    "undertone": "red/red",
+    "notes": ""
+  },
+  {
+    "code": "06VRo",
+    "family": "VRo",
+    "name": "Mauve Rose",
+    "level": 6,
+    "undertone": "violet/rose",
+    "notes": ""
+  },
+  {
+    "code": "05NA",
+    "family": "NA",
+    "name": "Smoke",
+    "level": 5,
+    "undertone": "blue/violet (cool neutral)",
+    "notes": ""
+  },
+  {
+    "code": "05N",
+    "family": "N",
+    "name": "Walnut",
+    "level": 5,
+    "undertone": "neutral",
+    "notes": ""
+  },
+  {
+    "code": "05NW",
+    "family": "NW",
+    "name": "Macchiato",
+    "level": 5,
+    "undertone": "neutral/warm",
+    "notes": "Chart shows 'V05NW'; recorded here as '05NW'"
+  },
+  {
+    "code": "05G",
+    "family": "G",
+    "name": "Caramel",
+    "level": 5,
+    "undertone": "gold",
+    "notes": ""
+  },
+  {
+    "code": "05C",
+    "family": "C",
+    "name": "Chili",
+    "level": 5,
+    "undertone": "copper",
+    "notes": ""
+  },
+  {
+    "code": "05RB",
+    "family": "RB",
+    "name": "Manzanita",
+    "level": 5,
+    "undertone": "red/brown",
+    "notes": ""
+  },
+  {
+    "code": "05CC",
+    "family": "CC",
+    "name": "Electric Shock",
+    "level": 5,
+    "undertone": "copper/copper",
+    "notes": ""
+  },
+  {
+    "code": "05RV",
+    "family": "RV",
+    "name": "Sangria",
+    "level": 5,
+    "undertone": "red/violet",
+    "notes": ""
+  },
+  {
+    "code": "05V",
+    "family": "V",
+    "name": "Cosmic Violet",
+    "level": 5,
+    "undertone": "violet",
+    "notes": ""
+  },
+  {
+    "code": "04ABn",
+    "family": "ABn",
+    "name": "Dark Roast",
+    "level": 4,
+    "undertone": "blue ash/brown",
+    "notes": ""
+  },
+  {
+    "code": "04NA",
+    "family": "NA",
+    "name": "Storm Cloud",
+    "level": 4,
+    "undertone": "blue/violet (cool neutral)",
+    "notes": ""
+  },
+  {
+    "code": "04M",
+    "family": "M",
+    "name": "Smoked Cedar",
+    "level": 4,
+    "undertone": "mahogany/brown",
+    "notes": ""
+  },
+  {
+    "code": "04NCh",
+    "family": "NCh",
+    "name": "Dark Chocolate",
+    "level": 4,
+    "undertone": "chocolate (brown)",
+    "notes": "Bonder Inside"
+  },
+  {
+    "code": "04N",
+    "family": "N",
+    "name": "Chicory",
+    "level": 4,
+    "undertone": "neutral",
+    "notes": ""
+  },
+  {
+    "code": "04NB",
+    "family": "NB",
+    "name": "Maple",
+    "level": 4,
+    "undertone": "natural/brown",
+    "notes": ""
+  },
+  {
+    "code": "04WG",
+    "family": "WG",
+    "name": "Sun Tea",
+    "level": 4,
+    "undertone": "warm gold",
+    "notes": ""
+  },
+  {
+    "code": "04CB",
+    "family": "CB",
+    "name": "Clove",
+    "level": 4,
+    "undertone": "copper/brown",
+    "notes": ""
+  },
+  {
+    "code": "04RV",
+    "family": "RV",
+    "name": "Cabernet",
+    "level": 4,
+    "undertone": "red/violet",
+    "notes": ""
+  },
+  {
+    "code": "04VRo",
+    "family": "VRo",
+    "name": "Violet Rose",
+    "level": 4,
+    "undertone": "violet/rose",
+    "notes": ""
+  },
+  {
+    "code": "03N",
+    "family": "N",
+    "name": "Espresso",
+    "level": 3,
+    "undertone": "neutral",
+    "notes": ""
+  },
+  {
+    "code": "03NB",
+    "family": "NB",
+    "name": "Mocha Java",
+    "level": 3,
+    "undertone": "natural/brown",
+    "notes": ""
+  },
+  {
+    "code": "03NW",
+    "family": "NW",
+    "name": "Cocoa Bean",
+    "level": 3,
+    "undertone": "neutral/warm",
+    "notes": ""
+  },
+  {
+    "code": "03G",
+    "family": "G",
+    "name": "Cinnamon",
+    "level": 3,
+    "undertone": "gold",
+    "notes": ""
+  },
+  {
+    "code": "03AA",
+    "family": "AA",
+    "name": "Terra Cotta",
+    "level": 3,
+    "undertone": "blue/green (controls red)",
+    "notes": ""
+  },
+  {
+    "code": "03RB",
+    "family": "RB",
+    "name": "Mahogany",
+    "level": 3,
+    "undertone": "red/brown",
+    "notes": ""
+  },
+  {
+    "code": "03R",
+    "family": "R",
+    "name": "Roxy Red",
+    "level": 3,
+    "undertone": "red",
+    "notes": ""
+  },
+  {
+    "code": "03RV",
+    "family": "RV",
+    "name": "Merlot",
+    "level": 3,
+    "undertone": "red/violet",
+    "notes": ""
+  },
+  {
+    "code": "03V",
+    "family": "V",
+    "name": "Orchid",
+    "level": 3,
+    "undertone": "violet",
+    "notes": ""
+  },
+  {
+    "code": "02ABn",
+    "family": "ABn",
+    "name": "Cool Ebony",
+    "level": 2,
+    "undertone": "blue ash/brown",
+    "notes": ""
+  },
+  {
+    "code": "02M",
+    "family": "M",
+    "name": "Midnight Ash",
+    "level": 2,
+    "undertone": "mahogany/brown",
+    "notes": ""
+  },
+  {
+    "code": "01B",
+    "family": "B",
+    "name": "Onyx",
+    "level": 1,
+    "undertone": "blue/black",
+    "notes": ""
+  },
+  {
+    "code": "000",
+    "family": "Clear",
+    "name": "Crystal Clear",
+    "level": null,
+    "undertone": "clear/dilution",
+    "notes": "Available in Gloss & Bonder Inside"
+  },
+  {
+    "code": "Pastel Silver Green",
+    "family": "Pastel",
+    "name": "Pastel Silver Green",
+    "level": null,
+    "undertone": "silver/green",
+    "notes": "Use on level 9+ for optimal outcome"
+  },
+  {
+    "code": "Pastel Peach",
+    "family": "Pastel",
+    "name": "Pastel Peach",
+    "level": null,
+    "undertone": "peach",
+    "notes": "Use on level 8+ for optimal outcome"
+  },
+  {
+    "code": "Pastel Pink",
+    "family": "Pastel",
+    "name": "Pastel Pink",
+    "level": null,
+    "undertone": "pink",
+    "notes": "Use on level 9+ for optimal outcome"
+  },
+  {
+    "code": "Yellow Kicker",
+    "family": "Kicker",
+    "name": "Yellow Kicker",
+    "level": null,
+    "undertone": "yellow",
+    "notes": "High-purity additive"
+  },
+  {
+    "code": "Orange Kicker",
+    "family": "Kicker",
+    "name": "Orange Kicker",
+    "level": null,
+    "undertone": "orange",
+    "notes": "High-purity additive"
+  },
+  {
+    "code": "Red Kicker",
+    "family": "Kicker",
+    "name": "Red Kicker",
+    "level": null,
+    "undertone": "red",
+    "notes": "High-purity additive"
+  },
+  {
+    "code": "Violet Kicker",
+    "family": "Kicker",
+    "name": "Violet Kicker",
+    "level": null,
+    "undertone": "violet",
+    "notes": "High-purity additive"
+  }
+]
