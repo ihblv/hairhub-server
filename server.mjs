@@ -212,7 +212,9 @@ function normalizeBrand(category, input) {
 function canonicalDeveloperName(brand) {
   const rule = BRAND_RULES[brand];
   if (!rule || !rule.developer || rule.developer === 'None') return null;
+  // pick the first option before "/" or " or "
   let first = rule.developer.split(/\s*\/\s*|\s+or\s+|\s+OR\s+/)[0];
+  // strip percentages, volumes, and parentheticals
   first = first.replace(/\d+%/g, '')
                .replace(/\b(10|20|30|40)\s*vol(ume)?\b/ig, '')
                .replace(/\([^)]*\)/g, '')
@@ -231,6 +233,7 @@ function enforceRatioAndDeveloper(formula, brand) {
   // Developer name enforcement (for demi and permanent brands that use a developer)
   const devName = canonicalDeveloperName(brand);
   if (devName && !new RegExp(devName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(out)) {
+    // if "with" already there but wrong product, still append our dev for clarity
     if (/ with /i.test(out)) {
       out = out.replace(/ with /i, ` with ${devName} `);
     } else {
@@ -244,6 +247,7 @@ function enforceRatioAndDeveloper(formula, brand) {
   if (isSimpleRatio) {
     const ratioRegex = /(\d+(\.\d+)?)\s*:\s*(\d+(\.\d+)?)/;
     if (!ratioRegex.test(out)) {
+      // Insert ratio before "with ..." if possible, else append to end
       if (/ with /i.test(out)) {
         out = out.replace(/ with /i, ` (${r}) with `);
       } else {
@@ -276,14 +280,12 @@ function enforceBrandConsistency(out, brand) {
 }
 
 // ---------------------------- Prompt Builders ------------------------------
-// Allow 2–3 scenarios depending on rules below (demi low-level caps scenarios at 2)
 const SHARED_JSON_SHAPE = `
-Return JSON only, no markdown. Use this shape:
+Return JSON only, no markdown. Use exactly this shape:
 
 {
   "analysis": "<1 short sentence>",
   "scenarios": [
-    // 2 or 3 objects depending on the rules below
     {
       "title": "Primary plan",
       "condition": null,
@@ -293,7 +295,9 @@ Return JSON only, no markdown. Use this shape:
       "ends":  { "formula": "...", "timing": "...", "note": null },
       "processing": ["Step 1...", "Step 2...", "Rinse/condition..."],
       "confidence": 0.0
-    }
+    },
+    { "title": "Alternate (cooler)", "condition": null, "target_level": null, "roots": null|{...}, "melt": null|{...}, "ends": {...}, "processing": ["..."], "confidence": 0.0 },
+    { "title": "Alternate (warmer)", "condition": null, "target_level": null, "roots": null|{...}, "melt": null|{...}, "ends": {...}, "processing": ["..."], "confidence": 0.0 }
   ]
 }
 `.trim();
@@ -329,7 +333,7 @@ Rules:
 - Include **developer volume and the exact ratio** in the ROOTS formula (e.g., "6N + 6.3 (${BRAND_RULES[brand]?.ratio || '1:1'}) with 20 vol <developer name>").
 - Provide a compatible mids/ends plan (refresh vs. band control).
 - Processing must call out: sectioning, application order (roots → mids → ends), timing, and rinse/aftercare.
-- Return **3 scenarios**: Primary, **Alternate (cooler)**, **Alternate (warmer)**.
+- Return exactly 3 scenarios: Primary, Alternate (cooler), Alternate (warmer).
 
 ${SHARED_JSON_SHAPE}
 `.trim();
@@ -345,13 +349,13 @@ ${ratioGuard}
 Rules:
 - **No developer** in formulas (RTU where applicable). Use brand Clear/diluter for sheerness.
 - Do not promise full grey coverage; you may blend/soften the appearance of grey.
-- Return **3 scenarios** (Primary / Alternate — **cooler** / Alternate — **warmer**) when appropriate.
+- Return 3 scenarios (Primary / Alternate cooler / Alternate warmer).
 
 ${SHARED_JSON_SHAPE}
 `.trim();
   }
 
-  // DEMI — special low-level rule
+  // Demi
   return `
 ${header}
 
@@ -362,19 +366,7 @@ Rules:
 - Gloss/toner plans only from ${brand}. In **every formula**, include the ratio and the **developer/activator name** (e.g., "09V + 09T (1:1) with Shades EQ Processing Solution").
 - Keep processing up to ~20 minutes unless brand guidance requires otherwise.
 - No lift promises; no grey-coverage claims.
-- **Depth discipline:** Respect the observed natural depth/level in the photo. Stay within ±2 levels; avoid suggesting high-level tones when hair is deep/dark.
-
-**Low-Level Logic (for Demi)**  
-- After analyzing the photo, if the natural depth is **level ≤ 3** (black or very dark brown), then:  
-  - Return **exactly 2 scenarios**:  
-    1) "Primary plan"  
-    2) "**Alternate**" (neutral/natural variation OR minor processing/timing variation)  
-  - **Do NOT** title alternates as “cooler” or “warmer”.  
-  - Keep both scenarios anchored to realistic deep tones at that depth; **do not** introduce high-level codes (e.g., 9V/10P) in any step.
-
-**Otherwise (level ≥ 4)**  
-- Return **3 scenarios** with the usual tone options:  
-  - "Primary plan", "Alternate — **cooler**", "Alternate — **warmer**".
+- Return exactly 3 scenarios (Primary / Alternate cooler / Alternate warmer).
 
 ${SHARED_JSON_SHAPE}
 `.trim();
@@ -389,7 +381,7 @@ async function chatAnalyze({ category, brand, dataUrl }) {
     {
       role: 'user',
       content: [
-        { type: 'text', text: `Analyze the attached photo. Category: ${category}. Brand: ${brand}. Provide scenarios following the JSON schema.` },
+        { type: 'text', text: `Analyze the attached photo. Category: ${category}. Brand: ${brand}. Provide 3 scenarios following the JSON schema.` },
         { type: 'image_url', image_url: { url: dataUrl } }
       ],
     },
@@ -474,3 +466,4 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log('🔑 API key loaded.');
   }
 });
+
