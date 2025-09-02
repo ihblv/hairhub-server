@@ -279,96 +279,6 @@ function enforceBrandConsistency(out, brand) {
   return patched;
 }
 
-
-// -------------------------- Lightweight Validator ---------------------------
-const BRAND_PATTERNS = {
-  // DEMI patterns (examples/families, not exhaustive)
-  'Redken Shades EQ': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
-  'Wella Color Touch': [/^\s*[1-9]\/\d{1,2}\b/],
-  'Paul Mitchell The Demi': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
-  'Matrix SoColor Sync': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
-  'Goldwell Colorance': [/^\s*\d{1,2}[A-Z@]{1,3}\b/],
-  'Schwarzkopf Igora Vibrance': [/^\s*\d{1,2}-\d{1,2}\b/, /^\s*0?\d{1,2}[A-Z]{1,3}\b/],
-  'Pravana ChromaSilk Express Tones': [/^\s*(?:(?:Smokey|Ash|Beige|Gold|Copper|Violet|Rose|Natural|Silver))/i],
-
-  // SEMI patterns
-  'Wella Color Fresh': [/^\s*(?:\d{1,2}\.\d|\d{1,2})\b/],
-  'Goldwell Elumen': [/^\s*(?:@[\w]+|\w+-\w+|\w{1,2}\d{1,2})\b/],
-  'Pravana ChromaSilk Vivids': [/^\s*(?:VIVIDS|Silver|Clear|Magenta|Pink|Blue|Green|Yellow|Orange|Red|Purple)/i],
-  'Schwarzkopf Chroma ID': [/^\s*(?:\d{1,2}-\d{1,2}|Clear|Bonding)/i],
-  'Matrix SoColor Cult': [/^\s*(?:Clear|Neon|Pastel|Teal|Pink|Blue|Purple|Red)/i]
-};
-
-function stepHasAllowedCodes(step, brand) {
-  if (!step || !step.formula) return true; // empty step is fine
-  const txt = step.formula;
-  const pats = BRAND_PATTERNS[brand] || [];
-  if (pats.length === 0) return true; // nothing to validate against
-  // Consider formula valid if at least one allowed pattern appears
-  return pats.some(rx => rx.test(txt));
-}
-
-function isBlackOrSingleVivid(analysis, brand) {
-  const a = (analysis || "").toLowerCase();
-  const black = /\b(level\s*[12]\b|solid\s*black)\b/.test(a);
-  const vividHint = /\b(single\s+vivid|vivid|fashion\s+shade|magenta|pink|blue|green|purple|teal)\b/.test(a);
-  // In semi-direct lines, a single vivid often doesn't have cooler/warmer alternates
-  return black || vividHint;
-}
-
-function extractNumericLevels(text) {
-  // crude parse: capture 2-digit levels like 01-12 and single digits 1-12
-  const levels = [];
-  const rx = /\b0?([1-9]|1[0-2])\s*[A-Z@]?/g;
-  let m;
-  while ((m = rx.exec(text)) !== null) {
-    const n = parseInt(m[1], 10);
-    if (!isNaN(n)) levels.push(n);
-  }
-  return levels;
-}
-
-function altHasHighLevelToner(sc, brand) {
-  const parts = [sc?.roots?.formula, sc?.melt?.formula, sc?.ends?.formula].filter(Boolean).join(" ");
-  const lvls = extractNumericLevels(parts);
-  // treat 7+ as "light levels" for demi toners; if analysis is black, these are unrealistic alternates
-  return lvls.some(n => n >= 7);
-}
-
-function applyValidator(out, category, brand) {
-  if (!out || !Array.isArray(out.scenarios)) return out;
-  if (category === 'permanent') return out;
-
-  const patched = { ...out };
-  patched.scenarios = out.scenarios.map((sc) => {
-    const s = { ...sc };
-    const title = (s.title || '').toLowerCase();
-    const isAlternate = title.includes('alternate');
-    if (!isAlternate) return s; // primary untouched
-
-    // If analysis indicates black/single vivid, mark N/A
-    if (isBlackOrSingleVivid(out.analysis, brand) || altHasHighLevelToner(s, brand)) {
-      s.na = true;
-      s.note = "Not applicable for this photo/brand line.";
-      return s;
-    }
-
-    // Validate shade code presence per brand pattern on any present step
-    const rootsOK = stepHasAllowedCodes(s.roots, brand);
-    const meltOK  = stepHasAllowedCodes(s.melt, brand);
-    const endsOK  = stepHasAllowedCodes(s.ends, brand);
-    const valid = rootsOK && meltOK && endsOK;
-
-    if (!valid) {
-      s.na = true;
-      s.note = "Not applicable for this photo/brand line.";
-    }
-    return s;
-  });
-  return patched;
-}
-
-
 // ---------------------------- Prompt Builders ------------------------------
 const SHARED_JSON_SHAPE = `
 Return JSON only, no markdown. Use exactly this shape:
@@ -439,12 +349,7 @@ ${ratioGuard}
 Rules:
 - **No developer** in formulas (RTU where applicable). Use brand Clear/diluter for sheerness.
 - Do not promise full grey coverage; you may blend/soften the appearance of grey.
-- Return up to 3 scenarios:
-- Primary (always required)
-- Alternate (cooler) and/or Alternate (warmer) **only if realistic and available** for the selected brand line.
-- **If the photo shows natural or dyed level 1–2 / jet black, do NOT provide cooler/warmer alternates — mark them as Not applicable.**
-- If an alternate is not relevant (e.g., solid level 1–2 black; a single vivid/fashion shade where a cooler/warmer alternative doesn’t exist; or the brand line doesn’t offer those tones), return it as **Not applicable**.
-- Do not invent shade codes. Only use codes that exist for the selected brand line.
+- Return 3 scenarios (Primary / Alternate cooler / Alternate warmer).
 
 ${SHARED_JSON_SHAPE}
 `.trim();
@@ -461,12 +366,7 @@ Rules:
 - Gloss/toner plans only from ${brand}. In **every formula**, include the ratio and the **developer/activator name** (e.g., "09V + 09T (1:1) with Shades EQ Processing Solution").
 - Keep processing up to ~20 minutes unless brand guidance requires otherwise.
 - No lift promises; no grey-coverage claims.
-- Return up to 3 scenarios:
-- Primary (always required)
-- Alternate (cooler) and/or Alternate (warmer) **only if realistic and available** for the selected brand line.
-- **If the photo shows natural or dyed level 1–2 / jet black, do NOT provide cooler/warmer alternates — mark them as Not applicable.**
-- If an alternate is not relevant (e.g., solid level 1–2 black; or the brand line doesn’t offer those tones for this look), return it as **Not applicable**.
-- Do not invent shade codes. Only use codes that exist for the selected brand line.
+- Return exactly 3 scenarios (Primary / Alternate cooler / Alternate warmer).
 
 ${SHARED_JSON_SHAPE}
 `.trim();
@@ -538,9 +438,6 @@ app.post('/analyze', upload.single('photo'), async (req, res) => {
 
     // Enforce missing ratio/dev name (e.g., Shades EQ 1:1) before returning
     out = enforceBrandConsistency(out, brand);
-
-    // Lightweight post-validation for Demi/Semi alternates
-    out = applyValidator(out, category, brand);
 
     if (!out || typeof out !== 'object') {
       return res.status(502).json({ error: 'Invalid model output' });
