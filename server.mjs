@@ -279,6 +279,77 @@ function enforceBrandConsistency(out, brand) {
   return patched;
 }
 
+
+// -------------------------- Lightweight Validator ---------------------------
+const BRAND_PATTERNS = {
+  // DEMI patterns (examples/families, not exhaustive)
+  'Redken Shades EQ': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
+  'Wella Color Touch': [/^\s*[1-9]\/\d{1,2}\b/],
+  'Paul Mitchell The Demi': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
+  'Matrix SoColor Sync': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
+  'Goldwell Colorance': [/^\s*\d{1,2}[A-Z@]{1,3}\b/],
+  'Schwarzkopf Igora Vibrance': [/^\s*\d{1,2}-\d{1,2}\b/, /^\s*0?\d{1,2}[A-Z]{1,3}\b/],
+  'Pravana ChromaSilk Express Tones': [/^\s*(?:(?:Smokey|Ash|Beige|Gold|Copper|Violet|Rose|Natural|Silver))/i],
+
+  // SEMI patterns
+  'Wella Color Fresh': [/^\s*(?:\d{1,2}\.\d|\d{1,2})\b/],
+  'Goldwell Elumen': [/^\s*(?:@[\w]+|\w+-\w+|\w{1,2}\d{1,2})\b/],
+  'Pravana ChromaSilk Vivids': [/^\s*(?:VIVIDS|Silver|Clear|Magenta|Pink|Blue|Green|Yellow|Orange|Red|Purple)/i],
+  'Schwarzkopf Chroma ID': [/^\s*(?:\d{1,2}-\d{1,2}|Clear|Bonding)/i],
+  'Matrix SoColor Cult': [/^\s*(?:Clear|Neon|Pastel|Teal|Pink|Blue|Purple|Red)/i]
+};
+
+function stepHasAllowedCodes(step, brand) {
+  if (!step || !step.formula) return true; // empty step is fine
+  const txt = step.formula;
+  const pats = BRAND_PATTERNS[brand] || [];
+  if (pats.length === 0) return true; // nothing to validate against
+  // Consider formula valid if at least one allowed pattern appears
+  return pats.some(rx => rx.test(txt));
+}
+
+function isBlackOrSingleVivid(analysis, brand) {
+  const a = (analysis || "").toLowerCase();
+  const black = /\b(level\s*[12]\b|solid\s*black)\b/.test(a);
+  const vividHint = /\b(single\s+vivid|vivid|fashion\s+shade|magenta|pink|blue|green|purple|teal)\b/.test(a);
+  // In semi-direct lines, a single vivid often doesn't have cooler/warmer alternates
+  return black || vividHint;
+}
+
+function applyValidator(out, category, brand) {
+  if (!out || !Array.isArray(out.scenarios)) return out;
+  if (category === 'permanent') return out;
+
+  const patched = { ...out };
+  patched.scenarios = out.scenarios.map((sc) => {
+    const s = { ...sc };
+    const title = (s.title || '').toLowerCase();
+    const isAlternate = title.includes('alternate');
+    if (!isAlternate) return s; // primary untouched
+
+    // If analysis indicates black/single vivid, mark N/A
+    if (isBlackOrSingleVivid(out.analysis, brand)) {
+      s.na = true;
+      s.note = "Not applicable for this photo/brand line.";
+      return s;
+    }
+
+    // Validate shade code presence per brand pattern on any present step
+    const rootsOK = stepHasAllowedCodes(s.roots, brand);
+    const meltOK  = stepHasAllowedCodes(s.melt, brand);
+    const endsOK  = stepHasAllowedCodes(s.ends, brand);
+    const valid = rootsOK && meltOK && endsOK;
+
+    if (!valid) {
+      s.na = true;
+      s.note = "Not applicable for this photo/brand line.";
+    }
+    return s;
+  });
+  return patched;
+}
+
+
 // ---------------------------- Prompt Builders ------------------------------
 const SHARED_JSON_SHAPE = `
 Return JSON only, no markdown. Use exactly this shape:
@@ -349,7 +420,11 @@ ${ratioGuard}
 Rules:
 - **No developer** in formulas (RTU where applicable). Use brand Clear/diluter for sheerness.
 - Do not promise full grey coverage; you may blend/soften the appearance of grey.
-- Return 3 scenarios (Primary / Alternate cooler / Alternate warmer).
+- Return up to 3 scenarios:
+- Primary (always required)
+- Alternate (cooler) and/or Alternate (warmer) **only if realistic and available** for the selected brand line.
+- If an alternate is not relevant (e.g., solid level 1–2 black; a single vivid/fashion shade where a cooler/warmer alternative doesn’t exist; or the brand line doesn’t offer those tones), return it as **Not applicable**.
+- Do not invent shade codes. Only use codes that exist for the selected brand line.
 
 ${SHARED_JSON_SHAPE}
 `.trim();
@@ -366,7 +441,11 @@ Rules:
 - Gloss/toner plans only from ${brand}. In **every formula**, include the ratio and the **developer/activator name** (e.g., "09V + 09T (1:1) with Shades EQ Processing Solution").
 - Keep processing up to ~20 minutes unless brand guidance requires otherwise.
 - No lift promises; no grey-coverage claims.
-- Return exactly 3 scenarios (Primary / Alternate cooler / Alternate warmer).
+- Return up to 3 scenarios:
+- Primary (always required)
+- Alternate (cooler) and/or Alternate (warmer) **only if realistic and available** for the selected brand line.
+- If an alternate is not relevant (e.g., solid level 1–2 black; or the brand line doesn’t offer those tones for this look), return it as **Not applicable**.
+- Do not invent shade codes. Only use codes that exist for the selected brand line.
 
 ${SHARED_JSON_SHAPE}
 `.trim();
@@ -439,6 +518,9 @@ app.post('/analyze', upload.single('photo'), async (req, res) => {
     // Enforce missing ratio/dev name (e.g., Shades EQ 1:1) before returning
     out = enforceBrandConsistency(out, brand);
 
+    // Lightweight post-validation for Demi/Semi alternates
+    out = applyValidator(out, category, brand);
+
     if (!out || typeof out !== 'object') {
       return res.status(502).json({ error: 'Invalid model output' });
     }
@@ -466,3 +548,90 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log('🔑 API key loaded.');
   }
 });
+
+
+
+// -------------------- Client-AI Namespace --------------------
+
+// POST /client-ai/compose-message
+app.post('/client-ai/compose-message', async (req, res) => {
+  try {
+    const { type, tone, client, stylist, notes } = req.body;
+    const prompt = {
+      role: "system",
+      content: "You are a salon assistant AI. Generate a concise, salon-appropriate message strictly in JSON."
+    };
+    const userPrompt = {
+      role: "user",
+      content: JSON.stringify({
+        task: "compose-message",
+        type, tone, client, stylist, notes
+      })
+    };
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.4,
+      response_format: { type: "json_object" },
+      messages: [prompt, userPrompt]
+    });
+    const text = response.choices[0].message.content;
+    res.json(JSON.parse(text));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "compose-message failed" });
+  }
+});
+
+// POST /client-ai/summarize-consultation
+app.post('/client-ai/summarize-consultation', async (req, res) => {
+  try {
+    const { history, tags } = req.body;
+    const prompt = {
+      role: "system",
+      content: "You are a salon AI. Summarize consultations concisely and return JSON with summary and extracted_tags."
+    };
+    const userPrompt = {
+      role: "user",
+      content: JSON.stringify({ task: "summarize-consultation", history, tags })
+    };
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+      messages: [prompt, userPrompt]
+    });
+    const text = response.choices[0].message.content;
+    res.json(JSON.parse(text));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "summarize-consultation failed" });
+  }
+});
+
+// POST /client-ai/retail-suggest
+app.post('/client-ai/retail-suggest', async (req, res) => {
+  try {
+    const { serviceType, maintenanceGoal, budgetTier } = req.body;
+    const prompt = {
+      role: "system",
+      content: "You are a salon AI. Suggest retail products concisely. Respond strictly in JSON with an array of suggestions."
+    };
+    const userPrompt = {
+      role: "user",
+      content: JSON.stringify({ task: "retail-suggest", serviceType, maintenanceGoal, budgetTier })
+    };
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.5,
+      response_format: { type: "json_object" },
+      messages: [prompt, userPrompt]
+    });
+    const text = response.choices[0].message.content;
+    res.json(JSON.parse(text));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "retail-suggest failed" });
+  }
+});
+
+// --------------------------------------------------------------
