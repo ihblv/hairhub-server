@@ -316,6 +316,25 @@ function isBlackOrSingleVivid(analysis, brand) {
   return black || vividHint;
 }
 
+function extractNumericLevels(text) {
+  // crude parse: capture 2-digit levels like 01-12 and single digits 1-12
+  const levels = [];
+  const rx = /\b0?([1-9]|1[0-2])\s*[A-Z@]?/g;
+  let m;
+  while ((m = rx.exec(text)) !== null) {
+    const n = parseInt(m[1], 10);
+    if (!isNaN(n)) levels.push(n);
+  }
+  return levels;
+}
+
+function altHasHighLevelToner(sc, brand) {
+  const parts = [sc?.roots?.formula, sc?.melt?.formula, sc?.ends?.formula].filter(Boolean).join(" ");
+  const lvls = extractNumericLevels(parts);
+  // treat 7+ as "light levels" for demi toners; if analysis is black, these are unrealistic alternates
+  return lvls.some(n => n >= 7);
+}
+
 function applyValidator(out, category, brand) {
   if (!out || !Array.isArray(out.scenarios)) return out;
   if (category === 'permanent') return out;
@@ -328,7 +347,7 @@ function applyValidator(out, category, brand) {
     if (!isAlternate) return s; // primary untouched
 
     // If analysis indicates black/single vivid, mark N/A
-    if (isBlackOrSingleVivid(out.analysis, brand)) {
+    if (isBlackOrSingleVivid(out.analysis, brand) || altHasHighLevelToner(s, brand)) {
       s.na = true;
       s.note = "Not applicable for this photo/brand line.";
       return s;
@@ -423,6 +442,7 @@ Rules:
 - Return up to 3 scenarios:
 - Primary (always required)
 - Alternate (cooler) and/or Alternate (warmer) **only if realistic and available** for the selected brand line.
+- **If the photo shows natural or dyed level 1–2 / jet black, do NOT provide cooler/warmer alternates — mark them as Not applicable.**
 - If an alternate is not relevant (e.g., solid level 1–2 black; a single vivid/fashion shade where a cooler/warmer alternative doesn’t exist; or the brand line doesn’t offer those tones), return it as **Not applicable**.
 - Do not invent shade codes. Only use codes that exist for the selected brand line.
 
@@ -444,6 +464,7 @@ Rules:
 - Return up to 3 scenarios:
 - Primary (always required)
 - Alternate (cooler) and/or Alternate (warmer) **only if realistic and available** for the selected brand line.
+- **If the photo shows natural or dyed level 1–2 / jet black, do NOT provide cooler/warmer alternates — mark them as Not applicable.**
 - If an alternate is not relevant (e.g., solid level 1–2 black; or the brand line doesn’t offer those tones for this look), return it as **Not applicable**.
 - Do not invent shade codes. Only use codes that exist for the selected brand line.
 
