@@ -370,7 +370,7 @@ function applyValidator(out, category, brand) {
 
 
 // ---------------------------- Prompt Builders ------------------------------
-const SHARED_JSON_SHAPE_THREE = `
+const SHARED_JSON_SHAPE = `
 Return JSON only, no markdown. Use exactly this shape:
 
 {
@@ -392,25 +392,6 @@ Return JSON only, no markdown. Use exactly this shape:
 }
 `.trim();
 
-const SHARED_JSON_SHAPE_ONE = `
-Return JSON only, no markdown. Use exactly this shape:
-
-{
-  "analysis": "<1 short sentence>",
-  "scenarios": [
-    {
-      "title": "Primary plan",
-      "condition": null,
-      "target_level": null,
-      "roots": null | { "formula": "...", "timing": "...", "note": null },
-      "melt":  null | { "formula": "...", "timing": "...", "note": null },
-      "ends":  { "formula": "...", "timing": "...", "note": null },
-      "processing": ["Step 1...", "Step 2...", "Rinse/condition..."],
-      "confidence": 0.0
-    }
-  ]
-}
-`.trim();
 function brandRuleLine(brand) {
   const r = BRAND_RULES[brand];
   if (!r) return '';
@@ -444,7 +425,7 @@ Rules:
 - Processing must call out: sectioning, application order (roots → mids → ends), timing, and rinse/aftercare.
 - Return exactly 3 scenarios: Primary, Alternate (cooler), Alternate (warmer).
 
-${SHARED_JSON_SHAPE_THREE}
+${SHARED_JSON_SHAPE}
 `.trim();
   }
 
@@ -458,18 +439,14 @@ ${ratioGuard}
 Rules:
 - **No developer** in formulas (RTU where applicable). Use brand Clear/diluter for sheerness.
 - Do not promise full grey coverage; you may blend/soften the appearance of grey.
-- ${header}
-
-CATEGORY = SEMI-PERMANENT (direct/acidic deposit-only; ${brand})
-${ratioGuard}
-
-Rules:
-- **No developer** in formulas (RTU where applicable). Use brand Clear/diluter for sheerness.
-- Do not promise full grey coverage; you may blend/soften the appearance of grey.
-- **Return only one scenario: Primary. Do not include cooler or warmer alternates.**
+- Return up to 3 scenarios:
+- Primary (always required)
+- Alternate (cooler) and/or Alternate (warmer) **only if realistic and available** for the selected brand line.
+- **If the photo shows natural or dyed level 1–2 / jet black, do NOT provide cooler/warmer alternates — mark them as Not applicable.**
+- If an alternate is not relevant (e.g., solid level 1–2 black; a single vivid/fashion shade where a cooler/warmer alternative doesn’t exist; or the brand line doesn’t offer those tones), return it as **Not applicable**.
 - Do not invent shade codes. Only use codes that exist for the selected brand line.
 
-${SHARED_JSON_SHAPE_ONE}
+${SHARED_JSON_SHAPE}
 `.trim();
   }
 
@@ -491,7 +468,7 @@ Rules:
 - If an alternate is not relevant (e.g., solid level 1–2 black; or the brand line doesn’t offer those tones for this look), return it as **Not applicable**.
 - Do not invent shade codes. Only use codes that exist for the selected brand line.
 
-${SHARED_JSON_SHAPE_THREE}
+${SHARED_JSON_SHAPE}
 `.trim();
 }
 
@@ -503,7 +480,8 @@ async function chatAnalyze({ category, brand, dataUrl }) {
     { role: 'system', content: system },
     {
       role: 'user',
-      content: [{ type: 'text', text: `Analyze the attached photo. Category: ${category}. Brand: ${brand}. Provide ${category === 'permanent' ? '3' : '1'} scenario(s) following the JSON schema.` },
+      content: [
+        { type: 'text', text: `Analyze the attached photo. Category: ${category}. Brand: ${brand}. Provide 3 scenarios following the JSON schema.` },
         { type: 'image_url', image_url: { url: dataUrl } }
       ],
     },
@@ -563,6 +541,12 @@ app.post('/analyze', upload.single('photo'), async (req, res) => {
 
     // Lightweight post-validation for Demi/Semi alternates
     out = applyValidator(out, category, brand);
+    // Enforce single-scenario output for Demi/Semi, keep Permanent unchanged
+    if (category !== 'permanent' && Array.isArray(out.scenarios)) {
+      const primary = out.scenarios.find(s => (s.title || '').toLowerCase().includes('primary')) || out.scenarios[0];
+      out.scenarios = primary ? [primary] : [];
+    }
+    
 
     if (!out || typeof out !== 'object') {
       return res.status(502).json({ error: 'Invalid model output' });
