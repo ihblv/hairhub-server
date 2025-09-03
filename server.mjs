@@ -480,7 +480,15 @@ const messages = [
   {
     role: 'user',
     content: [
-      { type: 'text', text: `Analyze the attached photo. Category: ${category}. Brand: ${brand}. ${category === 'permanent' ? 'Provide 2-3 scenarios following the JSON schema.' : 'Return only one scenario: Primary. Do not include cooler or warmer alternates.'}${hintLine}` },
+      { type: 'text', text: [
+        "Analyze the attached photo.",
+        "Categorize it as demi/permanent/semi based on the request.",
+        category === 'permanent'
+          ? "Provide 2-3 scenarios following the JSON schema."
+          : "Return only one scenario: Primary. Do not include cooler or warmer alternates.",
+        hintLine
+      ].filter(Boolean).join("
+") },
       { type: 'image_url', image_url: { url: dataUrl } }
     ],
   },
