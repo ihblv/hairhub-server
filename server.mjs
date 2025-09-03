@@ -439,11 +439,8 @@ ${ratioGuard}
 Rules:
 - **No developer** in formulas (RTU where applicable). Use brand Clear/diluter for sheerness.
 - Do not promise full grey coverage; you may blend/soften the appearance of grey.
-- Return up to 3 scenarios:
-- Primary (always required)
-- Alternate (cooler) and/or Alternate (warmer) **only if realistic and available** for the selected brand line.
-- **If the photo shows natural or dyed level 1–2 / jet black, do NOT provide cooler/warmer alternates — mark them as Not applicable.**
-- If an alternate is not relevant (e.g., solid level 1–2 black; a single vivid/fashion shade where a cooler/warmer alternative doesn’t exist; or the brand line doesn’t offer those tones), return it as **Not applicable**.
+- Return only one scenario: Primary. Do not include cooler or warmer alternates.
+- If the photo or stylist hint shows a **pink/rose/peach** tint, include a **sheer pink** option using the brand’s official tones, diluted with Clear as needed to keep it a subtle tint. 
 - Do not invent shade codes. Only use codes that exist for the selected brand line.
 
 ${SHARED_JSON_SHAPE}
@@ -461,11 +458,9 @@ Rules:
 - Gloss/toner plans only from ${brand}. In **every formula**, include the ratio and the **developer/activator name** (e.g., "09V + 09T (1:1) with Shades EQ Processing Solution").
 - Keep processing up to ~20 minutes unless brand guidance requires otherwise.
 - No lift promises; no grey-coverage claims.
-- Return up to 3 scenarios:
-- Primary (always required)
-- Alternate (cooler) and/or Alternate (warmer) **only if realistic and available** for the selected brand line.
-- **If the photo shows natural or dyed level 1–2 / jet black, do NOT provide cooler/warmer alternates — mark them as Not applicable.**
-- If an alternate is not relevant (e.g., solid level 1–2 black; or the brand line doesn’t offer those tones for this look), return it as **Not applicable**.
+- Return only one scenario: Primary. Do not include cooler or warmer alternates.
+- If the photo or stylist hint shows a **pink/rose/peach** tint, explicitly include that nuance in the **Ends/Gloss** formula using this brand’s official shade(s).
+- If this brand line lacks a pink/rose option, keep the Primary demi gloss neutral/cool as needed **and** add an additional step in `processing` labeled “Optional sheer pink overlay” with the exact product from the brand’s **semi/direct** line plus Clear/diluter ratio to achieve a faint tint (e.g., 10:1 Clear:Pink). 
 - Do not invent shade codes. Only use codes that exist for the selected brand line.
 
 ${SHARED_JSON_SHAPE}
@@ -485,7 +480,7 @@ const messages = [
   {
     role: 'user',
     content: [
-      { type: 'text', text: `Analyze the attached photo. Category: ${category}. Brand: ${brand}. Provide 3 scenarios following the JSON schema.${hintLine}` },
+      { type: 'text', text: `Analyze the attached photo. Category: ${category}. Brand: ${brand}. ${category === 'permanent' ? 'Provide 2-3 scenarios following the JSON schema.' : 'Return only one scenario: Primary. Do not include cooler or warmer alternates.'}${hintLine}` },
       { type: 'image_url', image_url: { url: dataUrl } }
     ],
   },
