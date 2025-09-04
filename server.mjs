@@ -216,6 +216,34 @@ const BRAND_PATTERNS = {
   'Matrix SoColor Cult': [/^\s*[A-Za-z][A-Za-z ]*\b/],
 };
 
+// Provide a few representative codes for each brand to guide the model. These
+// samples are used in the system prompt to illustrate valid formats.
+const BRAND_SAMPLES = {
+  // DEMI
+  'Redken Shades EQ': '07NB, 09V, 06T',
+  'Wella Color Touch': '7/43, 8/0, 0/00',
+  'Paul Mitchell The Demi': '6A, 8NB, 9GV',
+  'Matrix SoColor Sync': '6P, 7RC, 10N',
+  'Goldwell Colorance': '7GB, 9K, P03',
+  'Schwarzkopf Igora Vibrance': '7-65, 8-0, 9-5',
+  'Pravana ChromaSilk Express Tones': 'Rose, Beige, Silver',
+  // PERMANENT
+  'Redken Color Gels Lacquers': '6NW, 7AB, 9VRo',
+  'Wella Koleston Perfect': '7/43, 9/96, 10/0',
+  'Wella Illumina Color': '8/37, 9/59, 10/36',
+  'L’Oréal Professionnel Majirel': '7.34, 8.13, 10.22',
+  'Matrix SoColor Permanent': '7RC, 6AA, UL-A',
+  'Goldwell Topchic': '7NA, 5RB, 9G',
+  'Schwarzkopf Igora Royal': '7-46, 9-55, 10-0',
+  'Pravana ChromaSilk Permanent Crème Color': '6.66, 8N, 10NB',
+  // SEMI
+  'Wella Color Fresh': '8/03, 10/81, 0/00',
+  'Goldwell Elumen': '@RR, @TQ, @Clear',
+  'Pravana ChromaSilk Vivids': 'Magenta, Blue, Neon Pink',
+  'Schwarzkopf Chroma ID': '9-12, 5-2, Bonding',
+  'Matrix SoColor Cult': 'True Blue, Pastel Pink, Neon Yellow',
+};
+
 // ------------------------- Brand Helpers ------------------------------
 function canonList(arr) {
   const map = new Map();
@@ -372,7 +400,12 @@ function validateOut(out, brand) {
       const codes = extractCodes(formula);
       for (const code of codes) {
         if (!matchesPattern(code, brand)) {
-          return { valid: false, reason: `Unrecognized shade format for ${brand}` };
+          // Generic fallback: allow alphanumeric codes without slash or hyphen
+          const trimmed = code.trim();
+          const genericOK = /^[A-Za-z0-9.]+$/.test(trimmed) && !/[\/\-]/.test(trimmed);
+          if (!genericOK) {
+            return { valid: false, reason: `Unrecognized shade format for ${brand}` };
+          }
         }
       }
       // Ratio/developer check
@@ -503,7 +536,8 @@ function brandRuleLine(brand) {
 function buildSystemPrompt(category, brand) {
   const header = `You are Formula Guru, a master colourist. Use only: "${brand}". Output must be JSON‑only and match the app schema.`;
   const ruleLine = brandRuleLine(brand);
-  const ratioGuard = `\nIMPORTANT — MIXING RULES\n- Use the official mixing ratio shown below for ${brand} in ALL formula strings.\n- Include the developer/activator product name exactly as provided when applicable.\n${ruleLine}`;
+  const examples = BRAND_SAMPLES[brand] ? `For example, valid shade codes for this brand include: ${BRAND_SAMPLES[brand]}.` : '';
+  const ratioGuard = `\nIMPORTANT — MIXING RULES\n- Use the official mixing ratio shown below for ${brand} in ALL formula strings.\n- Include the developer/activator product name exactly as provided when applicable.\n${ruleLine}\n${examples}`;
   if (category === 'permanent') {
     return `\n${header}\n\nCATEGORY = PERMANENT (root grey coverage)\n${ratioGuard}\n\nRules:\n- Root coverage formulas must include a natural/neutral series shade plus tone to match mids/ends.\n- Always include developer volume and ratio in the roots formula.\n- Provide compatible mids/ends plan (refresh vs band control).\n- Processing must describe sectioning, application order (roots→mids→ends), timing and aftercare.\n- Return exactly 3 scenarios: Primary, Alternate (cooler), Alternate (warmer).\n\n${SHARED_JSON_SHAPE}`;
   }
