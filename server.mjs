@@ -19,15 +19,25 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const MODEL = 'gpt-4o';
 
 // ----------------------------- Brand Catalogs ------------------------------
-const DEMI_BRANDS = [  'Redken Shades EQ',  'Wella Color Touch',  'Paul Mitchell The Demi',  'Matrix SoColor Sync',  'Goldwell Colorance',  'Schwarzkopf Igora Vibrance',  'Pravana ChromaSilk Express Tones',
-  'L’Oréal Professionnel Dia Color',
-  'L’Oréal Professionnel Dia Light',
-  'Davines View',
-  'Danger Jones Gloss Toner',
+const DEMI_BRANDS = [
+  'Redken Shades EQ',
+  'Wella Color Touch',
+  'Paul Mitchell The Demi',
+  'Matrix SoColor Sync',
+  'Goldwell Colorance',
+  'Schwarzkopf Igora Vibrance',
+  'Pravana ChromaSilk Express Tones',
 ];
 
-const PERMANENT_BRANDS = [  'Redken Color Gels Lacquers',  'Wella Koleston Perfect',  'Wella Illumina Color',  'L’Oréal Professionnel Majirel',  'Matrix SoColor Permanent',  'Goldwell Topchic',  'Schwarzkopf Igora Royal',  'Pravana ChromaSilk Permanent Crème Color',
-  'Redken Color Fusion',
+const PERMANENT_BRANDS = [
+  'Redken Color Gels Lacquers',
+  'Wella Koleston Perfect',
+  'Wella Illumina Color',
+  'L’Oréal Professionnel Majirel',
+  'Matrix SoColor Permanent',
+  'Goldwell Topchic',
+  'Schwarzkopf Igora Royal',
+  'Pravana ChromaSilk Permanent Crème Color',
 ];
 
 const SEMI_BRANDS = [
@@ -41,12 +51,6 @@ const SEMI_BRANDS = [
 // ------------------------ Manufacturer Mixing Rules ------------------------
 const BRAND_RULES = {
   // PERMANENT
-  'Redken Color Fusion': {
-    category: 'permanent',
-    ratio: '1:1',
-    developer: 'Redken Pro-oxide Cream Developer 10/20/30/40 vol (20 vol typical for coverage)',
-    notes: 'Alkaline permanent crème; standard 1:1.'
-  },
   'Redken Color Gels Lacquers': {
     category: 'permanent',
     ratio: '1:1',
@@ -97,30 +101,6 @@ const BRAND_RULES = {
   },
 
   // DEMI
-  'Danger Jones Gloss Toner': {
-    category: 'demi',
-    ratio: '1:1',
-    developer: 'Danger Jones Gloss Developer 6-vol (≈1.8%)',
-    notes: 'Gloss toner system; process ~3–10 minutes (check often).'
-  },
-  'Davines View': {
-    category: 'demi',
-    ratio: '1:1',
-    developer: 'View Activator 10 vol (3%)',
-    notes: 'Acidic tone-on-tone; mix 1:1 with View Activator.'
-  },
-  'L’Oréal Professionnel Dia Light': {
-    category: 'demi',
-    ratio: '1:1.5',
-    developer: 'Diactivateur 1.8% / 2.7% / 4.5%',
-    notes: 'Acidic gloss for sensitized hair; 1:1.5.'
-  },
-  'L’Oréal Professionnel Dia Color': {
-    category: 'demi',
-    ratio: '1:1.5',
-    developer: 'Diactivateur 1.8% / 2.7% / 4.5%',
-    notes: 'Tone-on-tone gel-crème; standard 1:1.5 with Diactivateur.'
-  },
   'Redken Shades EQ': {
     category: 'demi',
     ratio: '1:1',
