@@ -20,17 +20,22 @@ const MODEL = 'gpt-4o';
 
 // ----------------------------- Brand Catalogs ------------------------------
 const DEMI_BRANDS = [
-  'Redken Shades EQ',
+    'Redken Shades EQ',
   'Wella Color Touch',
   'Paul Mitchell The Demi',
   'Matrix SoColor Sync',
   'Goldwell Colorance',
   'Schwarzkopf Igora Vibrance',
   'Pravana ChromaSilk Express Tones',
+  'L’Oréal Professionnel Dia Color',
+  'L’Oréal Professionnel Dia Light',
+  'Davines View',
+  'Danger Jones Gloss Toner',
+
 ];
 
 const PERMANENT_BRANDS = [
-  'Redken Color Gels Lacquers',
+    'Redken Color Gels Lacquers',
   'Wella Koleston Perfect',
   'Wella Illumina Color',
   'L’Oréal Professionnel Majirel',
@@ -38,6 +43,8 @@ const PERMANENT_BRANDS = [
   'Goldwell Topchic',
   'Schwarzkopf Igora Royal',
   'Pravana ChromaSilk Permanent Crème Color',
+  'Redken Color Fusion',
+
 ];
 
 const SEMI_BRANDS = [
@@ -51,6 +58,14 @@ const SEMI_BRANDS = [
 // ------------------------ Manufacturer Mixing Rules ------------------------
 const BRAND_RULES = {
   // PERMANENT
+
+'Redken Color Fusion': {
+  category: 'permanent',
+  ratio: '1:1',
+  developer: 'Redken Pro-oxide Cream Developer 10/20/30/40 vol',
+  notes: 'Standard families mix 1:1 with Pro-Oxide. Extra Lift families mix 1:2 with specified developer per Redken guidance.'
+},
+
   'Redken Color Gels Lacquers': {
     category: 'permanent',
     ratio: '1:1',
@@ -101,6 +116,38 @@ const BRAND_RULES = {
   },
 
   // DEMI
+
+'Danger Jones Gloss Toner': {
+  category: 'demi',
+  ratio: '1:1',
+  developer: 'Danger Jones Gloss Toner Developer 6-vol (1.8%)',
+  notes: 'Process 3–10 minutes; check often. Use the dedicated Gloss Toner Developer (6-vol / 1.8%).'
+},
+
+
+'Davines View': {
+  category: 'demi',
+  ratio: '1:1',
+  developer: 'Davines Activator 10 vol',
+  notes: 'Mix 1:1 with Activator 10 vol. Gentle, acidic tone-on-tone.'
+},
+
+
+'L’Oréal Professionnel Dia Light': {
+  category: 'demi',
+  ratio: '1:1.5',
+  developer: 'Diactivateur 6 or 9 vol',
+  notes: 'Acidic demi gloss; mix 1:1.5 with Diactivateur 6 or 9 vol.'
+},
+
+
+'L’Oréal Professionnel Dia Color': {
+  category: 'demi',
+  ratio: '1:1.5',
+  developer: 'Diactivateur 6/9/15 vol',
+  notes: 'Use Diactivateur 6, 9, or 15 vol as appropriate. Standard demi gloss; follow manufacturer timing.'
+},
+
   'Redken Shades EQ': {
     category: 'demi',
     ratio: '1:1',
