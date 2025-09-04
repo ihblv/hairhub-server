@@ -425,9 +425,26 @@ function validateAgainstAllowList(out, brand) {
       // Extract codes and validate membership
       const codes = extractCodes(formula);
       for (const code of codes) {
-        // Some formulas include parentheses but we trimmed them; treat uppercase
-        const keyCode = code.trim();
-        if (!allowed.has(keyCode) && !allowed.has(keyCode.toUpperCase()) && !allowed.has(keyCode.toLowerCase())) {
+        // Normalize code: trim and uppercase for consistent matching
+        const raw = (code || '').trim();
+        if (!raw) continue;
+        const up = raw.toUpperCase();
+        // Some brands allow codes with or without a leading zero. Build variants:
+        // alt1 removes a single leading zero when followed by another digit (e.g., 07NB -> 7NB).
+        const alt1 = up.replace(/^0(\d)/, '$1');
+        // alt2 adds a leading zero when the code starts with a single digit followed by a letter (e.g., 6NB -> 06NB).
+        const alt2 = /^[1-9][A-Z]/.test(up) ? `0${up}` : up;
+        const variants = new Set([
+          raw,
+          up,
+          raw.toLowerCase(),
+          alt1,
+          alt1.toLowerCase(),
+          alt2,
+          alt2.toLowerCase(),
+        ]);
+        const match = Array.from(variants).some(v => allowed.has(v));
+        if (!match) {
           return { valid: false, reason: `Unrecognized shade(s) for ${brand}` };
         }
       }
