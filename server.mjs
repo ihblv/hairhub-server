@@ -1,8 +1,8 @@
-
-// server.mjs — Formula Guru 2 (final w/ Pravana Express Tones guard)
+// server.mjs — Formula Guru 2 (final w/ Pravana Express Tones guard + 1N black fix)
 // Category-aware (Permanent / Demi / Semi) with manufacturer mixing rules
 // Enforces ratios + developer names, validates shade formats, and adds
 // analysis-aware guard for Pravana ChromaSilk Express Tones suitability.
+// Also normalizes level-1/2 black to 1N (not 1A) on supported DEMI lines.
 // ------------------------------------------------------------------
 
 import 'dotenv/config';
@@ -327,7 +327,7 @@ function expressTonesGuard(out, analysis, brand) {
 
   // For vivid/rich red inspo, Rose won’t create saturation: recommend Vivids first
   if (wantsVividRed) {
-    const ends = { formula: 'N/A — Express Tones are toners. For saturated red, formulate with PRAVANA VIVIDS Red/Copper; optional quick 5‑min Express Tones Rose overlay only on pre-lightened hair.', timing: '', note: null };
+    const ends = { formula: 'N/A — Express Tones are toners. For saturated red, formulate with PRAVANA VIVIDS Red/Copper; optional quick 5-min Express Tones Rose overlay only on pre-lightened hair.', timing: '', note: null };
     out.scenarios = [{
       title: 'Primary plan',
       condition: null, target_level: null, roots: null, melt: null, ends,
@@ -416,6 +416,39 @@ function validatePrimaryScenario(out, brand) {
     if (s.ends  && !endsOK  && s.ends.formula)  s.ends.formula  = s.ends.formula.replace(/^[^\s]+/, '').trim();
   }
   return out;
+}
+
+// -------------------- NEW: Normalize 1–2 black to 1N on supported lines -----
+const N_SERIES_BLACK_BRANDS = new Set([
+  'Redken Shades EQ',
+  'Paul Mitchell The Demi',
+  'Matrix SoColor Sync',
+  'Goldwell Colorance',
+]);
+
+function isLevel12Black(analysis) {
+  const a = (analysis || '').toLowerCase();
+  return /\b(level\s*1(\s*[-–]\s*2)?|level\s*2|deep\s+black|jet\s+black|solid\s+black)\b/.test(a);
+}
+
+function replace1Awith1N(step) {
+  if (!step || !step.formula) return step;
+  return { ...step, formula: step.formula.replace(/\b1A\b/g, '1N') };
+}
+
+function enforceNeutralBlack(out, analysis, brand) {
+  if (!out || !Array.isArray(out.scenarios)) return out;
+  if (!N_SERIES_BLACK_BRANDS.has(brand)) return out;
+  if (!isLevel12Black(analysis)) return out;
+
+  const scenarios = out.scenarios.map(sc => {
+    const s = { ...sc };
+    s.roots = replace1Awith1N(s.roots);
+    s.melt  = replace1Awith1N(s.melt);
+    s.ends  = replace1Awith1N(s.ends);
+    return s;
+  });
+  return { ...out, scenarios };
 }
 
 // ---------------------------- Prompt Builders ------------------------------
@@ -580,13 +613,16 @@ app.post('/analyze', upload.single('photo'), async (req, res) => {
     // 2) Suitability guard for Pravana Express Tones
     out = expressTonesGuard(out, out.analysis, brand);
 
-    // 3) Validate alternates (Demi/Semi)
+    // 3) Normalize 1–2 black to 1N on supported lines
+    out = enforceNeutralBlack(out, out.analysis, brand);
+
+    // 4) Validate alternates (Demi/Semi)
     out = applyValidator(out, category, brand);
 
-    // 4) Validate Primary scenario as well
+    // 5) Validate Primary scenario as well
     out = validatePrimaryScenario(out, brand);
 
-    // 5) Collapse to a single scenario for Demi/Semi
+    // 6) Collapse to a single scenario for Demi/Semi
     if (category !== 'permanent' && Array.isArray(out.scenarios)) {
       const primary = out.scenarios.find(s => (s.title || '').toLowerCase().includes('primary')) || out.scenarios[0];
       out.scenarios = primary ? [primary] : [];
