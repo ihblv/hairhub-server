@@ -642,7 +642,38 @@ app.post('/analyze', upload.single('photo'), async (req, res) => {
 // ------------------------------- Start Server -------------------------------
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => console.log(`Formula Guru server running on :${PORT}`));
+  
+
+// ------------------------------ StylistSync Assistant ------------------------------
+app.post('/assistant', async (req, res) => {
+  try {
+    const { message } = req.body || {};
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'Missing message' });
+    }
+
+    const sys = `You are StylistSync — an AI hairstylist assistant embedded inside an iOS app.
+You can answer general hair questions, pricing strategy, client communications, inventory/backbar concepts, scheduling best practices, and color theory.
+You do NOT have direct access to the user's actual data yet (clients, calendar, inventory), so when asked to "look up" something specific, explain what they can tap in the app (Clients / Schedule / Backbar) and outline the quick steps. Keep replies concise and actionable for busy stylists.`;
+
+    const resp = await client.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: sys },
+        { role: 'user', content: String(message) },
+      ],
+      temperature: 0.3,
+    });
+
+    const reply = resp.choices?.[0]?.message?.content?.trim() || "I'm here—ask me anything about hair, pricing, clients, scheduling, or backbar.";
+    res.json({ reply });
+  } catch (err) {
+    console.error('assistant error', err);
+    res.status(500).json({ error: 'assistant_failed' });
+  }
+});
+
+app.listen(PORT, () => console.log(`Formula Guru server running on :${PORT}`));
 }
 
 export default app;
