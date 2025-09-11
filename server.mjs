@@ -1,6 +1,6 @@
 // server.mjs — Formula Guru 2 (final w/ Pravana Express Tones guard + 1N black fix)
 // Category-aware (Permanent / Demi / Semi) with manufacturer mixing rules
-// Enforces ratios + developer names, validates shade formats, && adds
+// Enforces ratios + developer names, validates shade formats, and adds
 // analysis-aware guard for Pravana ChromaSilk Express Tones suitability.
 // Also normalizes level-1/2 black to 1N (not 1A) on supported DEMI lines.
 // ------------------------------------------------------------------
@@ -487,7 +487,7 @@ function buildSystemPrompt(category, brand) {
 IMPORTANT — MIXING RULES
 - Use the **official mixing ratio shown below** for ${brand} in ALL formula strings.
 - Include the **developer/activator product name** exactly as provided below when applicable.
-- Only use exception ratios (e.g., high-lift || pastel/gloss) if clearly relevant, && state the reason.
+- Only use exception ratios (e.g., high-lift || pastel/gloss) if clearly relevant, and state the reason.
 ${brandRule}
 `.trim();
 
@@ -498,13 +498,13 @@ ${header}
 CATEGORY = PERMANENT (root gray coverage)
 ${ratioGuard}
 
-Goal: If the photo shows greys at the root, estimate grey % (<25%, 25–50%, 50–75%, 75–100%) && provide a firm ROOT COVERAGE formula that matches the mids/ends.
+Goal: If the photo shows greys at the root, estimate grey % (<25%, 25–50%, 50–75%, 75–100%) and provide a firm ROOT COVERAGE formula that matches the mids/ends.
 
 Rules:
 - Anchor coverage with a natural/neutral series for ${brand}; add supportive tone to match the photo.
-- Include **developer volume && the exact ratio** in the ROOTS formula (e.g., "6N + 6.3 (${BRAND_RULES[brand]?.ratio || '1:1'}) with 20 vol <developer>").
+- Include **developer volume and the exact ratio** in the ROOTS formula (e.g., "6N + 6.3 (${BRAND_RULES[brand]?.ratio || '1:1'}) with 20 vol <developer>").
 - Provide a compatible mids/ends plan (refresh vs. band control).
-- Processing must call out: sectioning, application order (roots → mids → ends), timing, && rinse/aftercare.
+- Processing must call out: sectioning, application order (roots → mids → ends), timing, and rinse/aftercare.
 - Return exactly 3 scenarios: Primary, Alternate (cooler), Alternate (warmer).
 
 ${SHARED_JSON_SHAPE}
@@ -523,7 +523,7 @@ Rules:
 - Do not promise full grey coverage; you may blend/soften the appearance of grey.
 - Return up to 3 scenarios:
   - Primary (always required)
-  - Alternate (cooler) and/or Alternate (warmer) **only if realistic && available**.
+  - Alternate (cooler) and/or Alternate (warmer) **only if realistic and available**.
 - If the photo shows level 1–2 / jet black, mark alternates **Not applicable**.
 - Do not invent shade codes. Only use codes that exist for ${brand}.
 
@@ -539,13 +539,13 @@ CATEGORY = DEMI (gloss/toner; brand-consistent behavior)
 ${ratioGuard}
 
 Rules:
-- Gloss/toner plans only from ${brand}. In **every formula**, include the ratio && the **developer/activator name**.
+- Gloss/toner plans only from ${brand}. In **every formula**, include the ratio and the **developer/activator name**.
 - Keep processing up to ~20 minutes unless brand guidance requires otherwise.
 - No lift promises; no grey-coverage claims.
 - Return up to 3 scenarios:
   - Primary (always required)
-  - Alternate (cooler) and/or Alternate (warmer) **only if realistic && available**.
-- If level 1–2 black || single-vivid context, mark alternates **Not applicable**.
+  - Alternate (cooler) and/or Alternate (warmer) **only if realistic and available**.
+- If level 1–2 black or single-vivid context, mark alternates **Not applicable**.
 - Do not invent shade codes. Only use codes that exist for ${brand}.
 
 ${SHARED_JSON_SHAPE}
@@ -639,175 +639,216 @@ app.post('/analyze', upload.single('photo'), async (req, res) => {
   }
 });
 
-// ------------------------------- Start Server -------------------------------
+// ------------------------------- Start Guard -------------------------------
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'test') {
-  
 
-// ------------------------------ StylistSync Assistant ------------------------------
+  // ------------------------------ StylistSync Assistant ------------------------------
+  // Calendar-aware, date-locking, action-synthesizing
+  app.post('/assistant', async (req, res) => {
+    try {
+      const {
+        message,
+        timezone = "America/Los_Angeles",
+        nowISO,
+        context = {}
+      } = req.body || {};
 
-app.post('/assistant', async (req, res) => {
-  try {
-    const { message, timezone = "America/Los_Angeles", nowISO, context = {} } = req.body || {};
-    if (!message || typeof message !== 'string' || !message.trim()) {
-      return res.status(400).json({ error: 'Missing message' });
-    }
-    const now = nowISO ? new Date(nowISO) : new Date();
-
-    // Helper: get offset like "-07:00" from an ISO string (fallback -07:00)
-    const offsetFromISO = (iso) => {
-      const m = typeof iso === "string" ? iso.match(/([+-]\d{2}:\d{2})$/) : null;
-      return m ? m[1] : "-07:00";
-    };
-    const ptOffset = offsetFromISO(nowISO || new Date().toISOString());
-
-    // Parse simple phrases like "this Monday 2pm", "upcoming Monday at 2:30 pm"
-    const weekdayIndex = { sunday:0, monday:1, tuesday:2, wednesday:3, thursday:4, friday:5, saturday:6 };
-    function resolveWeekday(phrase) {
-      const s = phrase.toLowerCase();
-      const wk = Object.keys(weekdayIndex).find(d => s.includes(d));
-      if (!wk) return null;
-      let hh = 9, mm = 0;
-      let timeMatch = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
-      if (timeMatch) {
-        hh = parseInt(timeMatch[1],10);
-        mm = timeMatch[2] ? parseInt(timeMatch[2],10) : 0;
-        const ampm = timeMatch[3];
-        if (ampm === 'pm' && hh < 12) hh += 12;
-        if (ampm === 'am' && hh === 12) hh = 0;
+      if (!message || typeof message !== 'string' || !message.trim()) {
+        return res.status(400).json({ error: 'Missing message' });
       }
-      const tgtDow = weekdayIndex[wk];
-      const nowPT = new Date(now);
-      const dow = nowPT.getUTCDay();
-      let add = (tgtDow - dow + 7) % 7;
-      const isNext = /next|upcoming/.test(s) || (/this/.test(s) && add===0);
-      if (add === 0 || isNext) add += 7;
-      const target = new Date(nowPT.getTime() + add*24*3600*1000);
-      const yyyy = target.getUTCFullYear();
-      const mm2 = String(target.getUTCMonth()+1).padStart(2,'0');
-      const dd2 = String(target.getUTCDate()).padStart(2,'0');
-      const HH = String(hh).padStart(2,'0');
-      const MM = String(mm).padStart(2,'0');
-      const iso = `${yyyy}-${mm2}-${dd2}T${HH}:${MM}:00${ptOffset}`;
-      return iso;
-    }
 
-    function extractSlots(text) {
-      const slots = {};
-      const mWeekday = text.toLowerCase().match(/\b(this|upcoming|next)?\s*(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
-      if (mWeekday) {
-        const iso = resolveWeekday(text);
-        if (iso) slots.dateISO = iso;
-      }
-      const mTime = text.toLowerCase().match(/at\s+(\d{1,2}(:\d{2})?\s*(am|pm)?)/);
-      if (mTime && !slots.dateISO) {
-        const timeStr = mTime[1];
-        const iso = resolveWeekday(`next monday ${timeStr}`); // fallback to next Monday if only time provided
-        if (iso) slots.dateISO = iso;
-      }
-      const mClientNamed = text.match(/named\s+([A-Za-z][\w'-]+)/i) || text.match(/\bfor\s+([A-Za-z][\w'-]+)\b/i);
-      if (mClientNamed) slots.clientName = mClientNamed[1];
-      const mService = text.match(/\bfor\s+(a\s+)?([A-Za-z ]+?)(?:\s+for|\s+at|\s+\$|\s+\d|\s*$)/i);
-      if (mService) {
-        const svc = mService[2].trim();
-        if (!/appointment|client|me|named|this|next|upcoming|monday|tuesday|wednesday|thursday|friday|saturday|sunday/i.test(svc)) {
-          slots.serviceType = svc[0].toUpperCase() + svc.slice(1);
-          slots.title = slots.serviceType;
+      // ---------- Time helpers (PT ISO with offset) ----------
+      const now = nowISO ? new Date(nowISO) : new Date();
+
+      const offsetFromISO = (iso) => {
+        const m = typeof iso === "string" ? iso.match(/([+-]\d{2}:\d{2})$/) : null;
+        // default to -07:00 (PDT) if we can't infer; the iOS device will render local time anyway
+        return m ? m[1] : "-07:00";
+      };
+      const ptOffset = offsetFromISO(nowISO || new Date().toISOString());
+
+      const WeekIndex = { sunday:0, monday:1, tuesday:2, wednesday:3, thursday:4, friday:5, saturday:6 };
+
+      // nearest-future resolver for "this/next/upcoming Monday 2pm"
+      function resolveWeekdayPhrase(text) {
+        const s = (text || "").toLowerCase();
+        const wk = Object.keys(WeekIndex).find(d => s.includes(d));
+        if (!wk) return null;
+
+        // time extraction (default 09:00 if absent)
+        let hh = 9, mm = 0;
+        const tm = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
+        if (tm) {
+          hh = parseInt(tm[1], 10);
+          mm = tm[2] ? parseInt(tm[2], 10) : 0;
+          const ap = tm[3];
+          if (ap === 'pm' && hh < 12) hh += 12;
+          if (ap === 'am' && hh === 12) hh = 0;
         }
-      }
-      const mPrice = text.match(/\$?\s*(\d{2,4})(?:\.\d{2})?\b/);
-      if (mPrice) slots.price = Number(mPrice[1]);
-      const mDur = text.match(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|min|minutes)/i);
-      if (mDur) {
-        const n = parseFloat(mDur[1]);
-        let mins = 0;
-        if (/min/.test(mDur[2])) mins = Math.round(n);
-        else mins = Math.round(n*60);
-        slots.durationMinutes = mins;
-      }
-      return slots;
-    }
 
-    const sys = `You are StylistSync — an AI hairstylist assistant inside an iOS app.
+        // compute next occurrence (nearest future)
+        const tgt = WeekIndex[wk];
+        const base = new Date(now);
+        // Use UTC weekday for stable math; we only need day jumps
+        const dow = base.getUTCDay();
+        let add = (tgt - dow + 7) % 7;
+
+        const saysNextOrUpcoming = /(?:\bnext\b|\bupcoming\b)/.test(s);
+        const saysThis = /\bthis\b/.test(s);
+
+        // If it's "this" and today is same weekday, push to next week; also push if "next"/"upcoming"
+        if (add === 0 && (saysThis || saysNextOrUpcoming)) add = 7;
+        if (add === 0) add = 7; // always future (never past)
+
+        const future = new Date(base.getTime() + add * 24 * 3600 * 1000);
+        const yyyy = future.getUTCFullYear();
+        const mm2  = String(future.getUTCMonth() + 1).padStart(2, '0');
+        const dd2  = String(future.getUTCDate()).padStart(2, '0');
+        const HH   = String(hh).padStart(2, '0');
+        const MM   = String(mm).padStart(2, '0');
+        return `${yyyy}-${mm2}-${dd2}T${HH}:${MM}:00${ptOffset}`;
+      }
+
+      // slot extraction from message (lightweight)
+      function extractSlots(text) {
+        const slots = {};
+        const lower = text.toLowerCase();
+
+        // weekday phrase
+        if (/(sunday|monday|tuesday|wednesday|thursday|friday|saturday)/.test(lower)) {
+          const iso = resolveWeekdayPhrase(text);
+          if (iso) slots.dateISO = iso;
+        }
+
+        // explicit $price
+        const mPrice = text.match(/\$\s*(\d{2,4})(?:\.\d{2})?/);
+        if (mPrice) slots.price = Number(mPrice[1]);
+
+        // duration "2.5 hours", "150 min"
+        const mDur = text.match(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?)/i);
+        if (mDur) {
+          const n = parseFloat(mDur[1]);
+          slots.durationMinutes = /min/i.test(mDur[2]) ? Math.round(n) : Math.round(n * 60);
+        }
+
+        // client name after "named" or "for"
+        const mClient = text.match(/\bnamed\s+([A-Za-z][\w'-]+)/i) || text.match(/\bfor\s+([A-Za-z][\w'-]+)\b/i);
+        if (mClient) slots.clientName = mClient[1];
+
+        // service/title (word(s) after "for ...", but avoid keywords)
+        const mSvc = text.match(/\bfor\s+(?:a\s+)?([A-Za-z ][A-Za-z ]*)/i);
+        if (mSvc) {
+          const raw = mSvc[1].trim();
+          if (!/\b(appointment|client|named|this|next|upcoming|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(raw)) {
+            const svc = raw.replace(/\s+/g, ' ').trim();
+            slots.serviceType = svc.charAt(0).toUpperCase() + svc.slice(1);
+            slots.title = slots.serviceType;
+          }
+        }
+        return slots;
+      }
+
+      // ---------- Build system prompt (LLM used; we will synthesize if needed) ----------
+      const sys = `You are StylistSync — an AI hairstylist assistant inside an iOS app.
 
 Rules:
 - Always return strict JSON with keys "reply" (string), "actions" (array), "warnings" (array).
 - For requests to book/create/delete/adjust in-app, you MUST include structured actions.
-- Timezone is ${timezone}. "now" is ${now.toISOString()}. If user says "this/upcoming/next Monday 2pm", resolve to the nearest FUTURE date in PT && return ISO with offset like 2025-09-15T14:00:00-07:00.
+- Timezone is ${timezone}. "now" is ${now.toISOString()}. If user says "this/upcoming/next Monday 2pm", resolve to the nearest FUTURE date in PT and return ISO with offset like 2025-09-15T14:00:00-07:00.
 - Prefer clientName over IDs. If client not found in context, include a warning that it will be created.
 - Do NOT mutate data; only propose actions.
 
 Context (names only):
-clients: ${(context.clients||[]).slice(0,50).join(", ")}
-appt count: ${(context.appointments||[]).length}`;
+clients: ${(context.clients || []).slice(0, 50).join(", ")}
+appt count: ${(context.appointments || []).length}`;
 
-    const userMsg = String(message);
+      const userMsg = String(message);
 
-    const resp = await client.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: sys },
-        { role: 'user', content: userMsg },
-      ],
-      temperature: 0.2,
-      response_format: { type: 'json_object' }
-    });
+      const resp = await client.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: 'system', content: sys },
+          { role: 'user', content: userMsg },
+        ],
+        temperature: 0.2,
+        response_format: { type: 'json_object' }
+      });
 
-    const raw = resp.choices?.[0]?.message?.content?.trim() || "";
-    let parsed = null;
-    try { parsed = JSON.parse(raw); } catch { parsed = null; }
+      const raw = resp.choices?.[0]?.message?.content?.trim() || "";
+      let parsed = null;
+      try { parsed = JSON.parse(raw); } catch { parsed = null; }
 
-    const wantsAction = /(book|schedule|add|create|delete|cancel|adjust|reschedule)/i.test(userMsg) && /(appointment|client|inventory|product)/i.test(userMsg);
-    const actions = Array.isArray(parsed?.actions) ? parsed.actions : [];
-    const warnings = Array.isArray(parsed?.warnings) ? parsed.warnings : [];
+      // ---------- Guaranteed actions / warnings ----------
+      const wantsAction =
+        /(book|schedule|add|create|delete|cancel|adjust|reschedule)/i.test(userMsg) &&
+        /(appointment|client|inventory|product|calendar)/i.test(userMsg);
 
-    if (wantsAction && actions.length === 0) {
-      const slots = extractSlots(userMsg);
-      const synthesized = [];
+      const actions  = Array.isArray(parsed?.actions)  ? parsed.actions  : [];
+      const warnings = Array.isArray(parsed?.warnings) ? parsed.warnings : [];
 
-      if (slots.clientName && !(context.clients||[]).some(n => (n||"").toLowerCase() === slots.clientName.toLowerCase())) {
-        synthesized.push({ type: "createClient", payload: { name: slots.clientName, contact: null, notes: null } });
-        warnings.push(`Client '${slots.clientName}' not found; will be created.`);
-      }
+      if (wantsAction && actions.length === 0) {
+        // Synthesize from the user message using local slots + context
+        const slots = extractSlots(userMsg);
+        const synthesized = [];
 
-      if (slots.dateISO) {
-        synthesized.push({
-          type: "createAppointment",
-          payload: {
-            title: slots.title || "Appointment",
-            dateISO: slots.dateISO,
-            clientName: slots.clientName || null,
-            notes: null,
-            serviceType: slots.serviceType || null,
-            durationMinutes: slots.durationMinutes || 60,
-            price: slots.price || null
+        // createClient if needed
+        if (slots.clientName) {
+          const known = Array.isArray(context.clients)
+            ? context.clients.some(n => (n || "").toLowerCase() === slots.clientName.toLowerCase())
+            : false;
+          if (!known) {
+            synthesized.push({
+              type: "createClient",
+              payload: { name: slots.clientName, contact: null, notes: null }
+            });
+            warnings.push(`Client '${slots.clientName}' not found; will be created.`);
           }
-        });
+        }
 
-        const appts = Array.isArray(context.appointments) ? context.appointments : [];
-        const conflict = appts.find(a => a.dateISO && a.dateISO === slots.dateISO);
-        if (conflict) warnings.push(`Time ${slots.dateISO} overlaps with '${conflict.title}' for ${conflict.clientName || "someone"}.`);
+        // createAppointment if we have a date
+        if (slots.dateISO) {
+          synthesized.push({
+            type: "createAppointment",
+            payload: {
+              title: slots.title || "Appointment",
+              dateISO: slots.dateISO,
+              clientName: slots.clientName || null,
+              notes: null,
+              serviceType: slots.serviceType || null,
+              durationMinutes: slots.durationMinutes || 60,
+              price: slots.price || null
+            }
+          });
+
+          // Conflict check against provided context
+          const appts = Array.isArray(context.appointments) ? context.appointments : [];
+          const conflict = appts.find(a => a?.dateISO === slots.dateISO);
+          if (conflict) {
+            warnings.push(`Time ${slots.dateISO} overlaps with '${conflict.title}' for ${conflict.clientName || "someone"}.`);
+          }
+        }
+
+        parsed = {
+          reply: parsed?.reply || "Here’s what I can do:",
+          actions: synthesized,
+          warnings
+        };
       }
 
-      parsed = {
-        reply: parsed?.reply || "Here’s what I can do:",
-        actions: synthesized,
-        warnings
-      };
+      if (!parsed) parsed = { reply: raw || "I’m here to help.", actions: [], warnings: [] };
+      if (typeof parsed.reply !== 'string') parsed.reply = String(parsed.reply ?? '');
+      if (!Array.isArray(parsed.actions)) parsed.actions = [];
+      if (!Array.isArray(parsed.warnings)) parsed.warnings = [];
+
+      return res.json(parsed);
+    } catch (err) {
+      console.error('assistant error', err);
+      return res.status(500).json({ error: 'assistant_failed' });
     }
+  });
 
-    if (!parsed) parsed = { reply: raw || "I’m here to help.", actions: [], warnings: [] };
-    if (typeof parsed.reply !== 'string') parsed.reply = String(parsed.reply ?? '');
-    if (!Array.isArray(parsed.actions)) parsed.actions = [];
-    if (!Array.isArray(parsed.warnings)) parsed.warnings = [];
-
-    res.json(parsed);
-  } catch (err) {
-    console.error('assistant error', err);
-    res.status(500).json({ error: 'assistant_failed' });
-  }
-}););
-app.listen(PORT, () => console.log(`Formula Guru server running on :${PORT}`));
+  app.listen(PORT, () => console.log(`Formula Guru server running on :${PORT}`));
 }
 
 export default app;
