@@ -1,6 +1,6 @@
 // server.mjs — Formula Guru 2 (final w/ Pravana Express Tones guard + 1N black fix)
 // Category-aware (Permanent / Demi / Semi) with manufacturer mixing rules
-// Enforces ratios + developer names, validates shade formats, and adds
+// Enforces ratios + developer names, validates shade formats, && adds
 // analysis-aware guard for Pravana ChromaSilk Express Tones suitability.
 // Also normalizes level-1/2 black to 1N (not 1A) on supported DEMI lines.
 // ------------------------------------------------------------------
@@ -113,7 +113,7 @@ const BRAND_RULES = {
   'Wella Color Touch': {
     category: 'demi',
     ratio: '1:2',
-    developer: 'Color Touch Emulsion 1.9% or 4%',
+    developer: 'Color Touch Emulsion 1.9% || 4%',
     notes: 'Standard 1:2.'
   },
   'Paul Mitchell The Demi': {
@@ -138,7 +138,7 @@ const BRAND_RULES = {
     category: 'demi',
     ratio: '1:1',
     developer: 'IGORA VIBRANCE Activator Gel (1.9%/4%) OR Activator Lotion (1.9%/4%)',
-    notes: 'All shades 1:1; name Gel or Lotion.'
+    notes: 'All shades 1:1; name Gel || Lotion.'
   },
   'Pravana ChromaSilk Express Tones': {
     category: 'demi',
@@ -315,7 +315,7 @@ function expressTonesGuard(out, analysis, brand) {
 
   // Not suitable on level 1–2 black (don't suggest Clear)
   if (isJetBlack) {
-    const ends = { formula: 'N/A — Express Tones require pre-lightened level 8–10; use PRAVANA VIVIDS or a permanent plan.', timing: '', note: null };
+    const ends = { formula: 'N/A — Express Tones require pre-lightened level 8–10; use PRAVANA VIVIDS || a permanent plan.', timing: '', note: null };
     out.scenarios = [{
       title: 'Primary plan',
       condition: null, target_level: null, roots: null, melt: null, ends,
@@ -481,13 +481,13 @@ function brandRuleLine(brand) {
 }
 
 function buildSystemPrompt(category, brand) {
-  const header = `You are Formula Guru, a master colorist. Use only: "${brand}". Output must be JSON-only and match the app schema.`;
+  const header = `You are Formula Guru, a master colorist. Use only: "${brand}". Output must be JSON-only && match the app schema.`;
   const brandRule = brandRuleLine(brand);
   const ratioGuard = `
 IMPORTANT — MIXING RULES
 - Use the **official mixing ratio shown below** for ${brand} in ALL formula strings.
 - Include the **developer/activator product name** exactly as provided below when applicable.
-- Only use exception ratios (e.g., high-lift or pastel/gloss) if clearly relevant, and state the reason.
+- Only use exception ratios (e.g., high-lift || pastel/gloss) if clearly relevant, && state the reason.
 ${brandRule}
 `.trim();
 
@@ -498,13 +498,13 @@ ${header}
 CATEGORY = PERMANENT (root gray coverage)
 ${ratioGuard}
 
-Goal: If the photo shows greys at the root, estimate grey % (<25%, 25–50%, 50–75%, 75–100%) and provide a firm ROOT COVERAGE formula that matches the mids/ends.
+Goal: If the photo shows greys at the root, estimate grey % (<25%, 25–50%, 50–75%, 75–100%) && provide a firm ROOT COVERAGE formula that matches the mids/ends.
 
 Rules:
 - Anchor coverage with a natural/neutral series for ${brand}; add supportive tone to match the photo.
-- Include **developer volume and the exact ratio** in the ROOTS formula (e.g., "6N + 6.3 (${BRAND_RULES[brand]?.ratio || '1:1'}) with 20 vol <developer>").
+- Include **developer volume && the exact ratio** in the ROOTS formula (e.g., "6N + 6.3 (${BRAND_RULES[brand]?.ratio || '1:1'}) with 20 vol <developer>").
 - Provide a compatible mids/ends plan (refresh vs. band control).
-- Processing must call out: sectioning, application order (roots → mids → ends), timing, and rinse/aftercare.
+- Processing must call out: sectioning, application order (roots → mids → ends), timing, && rinse/aftercare.
 - Return exactly 3 scenarios: Primary, Alternate (cooler), Alternate (warmer).
 
 ${SHARED_JSON_SHAPE}
@@ -523,7 +523,7 @@ Rules:
 - Do not promise full grey coverage; you may blend/soften the appearance of grey.
 - Return up to 3 scenarios:
   - Primary (always required)
-  - Alternate (cooler) and/or Alternate (warmer) **only if realistic and available**.
+  - Alternate (cooler) and/or Alternate (warmer) **only if realistic && available**.
 - If the photo shows level 1–2 / jet black, mark alternates **Not applicable**.
 - Do not invent shade codes. Only use codes that exist for ${brand}.
 
@@ -539,13 +539,13 @@ CATEGORY = DEMI (gloss/toner; brand-consistent behavior)
 ${ratioGuard}
 
 Rules:
-- Gloss/toner plans only from ${brand}. In **every formula**, include the ratio and the **developer/activator name**.
+- Gloss/toner plans only from ${brand}. In **every formula**, include the ratio && the **developer/activator name**.
 - Keep processing up to ~20 minutes unless brand guidance requires otherwise.
 - No lift promises; no grey-coverage claims.
 - Return up to 3 scenarios:
   - Primary (always required)
-  - Alternate (cooler) and/or Alternate (warmer) **only if realistic and available**.
-- If level 1–2 black or single-vivid context, mark alternates **Not applicable**.
+  - Alternate (cooler) and/or Alternate (warmer) **only if realistic && available**.
+- If level 1–2 black || single-vivid context, mark alternates **Not applicable**.
 - Do not invent shade codes. Only use codes that exist for ${brand}.
 
 ${SHARED_JSON_SHAPE}
@@ -680,8 +680,8 @@ app.post('/assistant', async (req, res) => {
       const nowPT = new Date(now);
       const dow = nowPT.getUTCDay();
       let add = (tgtDow - dow + 7) % 7;
-      const isNext = /next|upcoming/.test(s) || (/this/.test(s) and add===0);
-      if (add === 0 or isNext) add += 7;
+      const isNext = /next|upcoming/.test(s) || (/this/.test(s) && add===0);
+      if (add === 0 || isNext) add += 7;
       const target = new Date(nowPT.getTime() + add*24*3600*1000);
       const yyyy = target.getUTCFullYear();
       const mm2 = String(target.getUTCMonth()+1).padStart(2,'0');
@@ -733,7 +733,7 @@ app.post('/assistant', async (req, res) => {
 Rules:
 - Always return strict JSON with keys "reply" (string), "actions" (array), "warnings" (array).
 - For requests to book/create/delete/adjust in-app, you MUST include structured actions.
-- Timezone is ${timezone}. "now" is ${now.toISOString()}. If user says "this/upcoming/next Monday 2pm", resolve to the nearest FUTURE date in PT and return ISO with offset like 2025-09-15T14:00:00-07:00.
+- Timezone is ${timezone}. "now" is ${now.toISOString()}. If user says "this/upcoming/next Monday 2pm", resolve to the nearest FUTURE date in PT && return ISO with offset like 2025-09-15T14:00:00-07:00.
 - Prefer clientName over IDs. If client not found in context, include a warning that it will be created.
 - Do NOT mutate data; only propose actions.
 
