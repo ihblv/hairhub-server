@@ -2,7 +2,7 @@
 // Category-aware (Permanent / Demi / Semi) with manufacturer mixing rules
 // Enforces ratios + developer names, validates shade formats, and adds
 // analysis-aware guard for Pravana ChromaSilk Express Tones suitability.
-// Also normalizes level-1/2 black to 1N (not 1A) on supported DEMI lines.
+// Normalizes level-1/2 black to 1N on supported DEMI lines.
 // Extends ONLY /assistant to be calendar-aware with guaranteed action synthesis.
 // ------------------------------------------------------------------
 
@@ -157,25 +157,460 @@ const BRAND_RULES = {
 };
 
 // ------------------------------ Utilities ----------------------------------
-// canonList, normalizeBrand, canonicalDeveloperName, enforceRatioAndDeveloper
-// … (all those utility functions remain exactly as in your working file) …
+function canonList(arr) {
+  const map = new Map();
+  for (const label of arr) map.set(label.toLowerCase(), label);
+  return map;
+}
+const DEMI_MAP = canonList(DEMI_BRANDS);
+const PERM_MAP = canonList(PERMANENT_BRANDS);
+const SEMI_MAP = canonList(SEMI_BRANDS);
 
-// ---------------------------- Validators, Guards ---------------------------
-// stepHasAllowedCodes, expressTonesGuard, applyValidator, validatePrimaryScenario,
-// enforceNeutralBlack … (keep them all as in your working file) …
+function normalizeBrand(category, input) {
+  const s = (input || '').trim().toLowerCase();
+  const pool =
+    category === 'permanent' ? PERM_MAP :
+    category === 'semi'      ? SEMI_MAP  :
+                               DEMI_MAP;
+
+  if (pool.has(s)) return pool.get(s);
+
+  // fuzzy
+  for (const [k, v] of pool.entries()) {
+    const head = k.split(' ')[0];
+    const tail = k.split(' ').slice(-1)[0];
+    if (s.includes(head) && s.includes(tail)) return v;
+    if (s.includes(head) || s.includes(tail)) return v;
+  }
+  // defaults
+  if (category === 'permanent') return 'Redken Color Gels Lacquers';
+  if (category === 'semi')      return 'Wella Color Fresh';
+  return 'Redken Shades EQ';
+}
+
+// developer display name (short)
+function canonicalDeveloperName(brand) {
+  const rule = BRAND_RULES[brand];
+  if (!rule || !rule.developer || rule.developer === 'None') return null;
+  let first = rule.developer.split(/\s*\/\s*|\s+or\s+|\s+OR\s+/)[0];
+  first = first.replace(/\d+%/g, '')
+               .replace(/\b(10|20|30|40)\s*vol(ume)?\b/ig, '')
+               .replace(/\([^)]*\)/g, '')
+               .replace(/\s{2,}/g, ' ')
+               .trim();
+  return first || null;
+}
+
+// Insert ratio + developer where missing
+function enforceRatioAndDeveloper(formula, brand) {
+  const rule = BRAND_RULES[brand];
+  if (!rule) return formula;
+  let out = (formula || '').trim();
+
+  const devName = canonicalDeveloperName(brand);
+  if (devName && !new RegExp(devName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(out)) {
+    if (/ with /i.test(out)) out = out.replace(/ with /i, ` with ${devName} `);
+    else out = `${out} with ${devName}`;
+  }
+
+  const r = (rule.ratio || '').trim();
+  const isSimpleRatio = /^(\d+(\.\d+)?):(\d+(\.\d+)?)$/.test(r);
+  if (isSimpleRatio) {
+    const ratioRegex = /(\d+(\.\d+)?)[ ]*:[ ]*(\d+(\.\d+)?)/;
+    if (!ratioRegex.test(out)) {
+      if (/ with /i.test(out)) out = out.replace(/ with /i, ` (${r}) with `);
+      else out = `${out} (${r})`;
+    }
+  }
+  return out.trim();
+}
+
+function fixStep(step, brand) {
+  if (!step) return null;
+  const patched = { ...step };
+  if (patched.formula) patched.formula = enforceRatioAndDeveloper(patched.formula, brand);
+  return patched;
+}
+
+function timingOverride(step, brand) {
+  if (!step) return step;
+  const s = { ...step };
+  if (brand === 'Pravana ChromaSilk Express Tones') {
+    s.timing = 'Process 5 minutes only; watch visually.';
+  }
+  return s;
+}
+
+function enforceBrandConsistency(out, brand) {
+  if (!out || !Array.isArray(out.scenarios)) return out;
+  const patched = { ...out, scenarios: out.scenarios.map(sc => {
+    const s = { ...sc };
+    s.roots = timingOverride(fixStep(s.roots, brand), brand);
+    s.melt  = timingOverride(fixStep(s.melt,  brand), brand);
+    s.ends  = timingOverride(fixStep(s.ends,  brand), brand);
+    return s;
+  })};
+  return patched;
+}
+
+// -------------------------- Shade Format Validators -------------------------
+const BRAND_PATTERNS = {
+  // DEMI
+  'Redken Shades EQ': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
+  'Wella Color Touch': [/^\s*[1-9]\/\d{1,2}\b/],
+  'Paul Mitchell The Demi': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
+  'Matrix SoColor Sync': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
+  'Goldwell Colorance': [/^\s*\d{1,2}[A-Z@]{1,3}\b/],
+  'Schwarzkopf Igora Vibrance': [/^\s*\d{1,2}-\d{1,2}\b/, /^\s*0?\d{1,2}[A-Z]{1,3}\b/],
+  // Names only for Express Tones:
+  'Pravana ChromaSilk Express Tones': [/^\s*(?:Platinum|Violet|Ash|Beige|Gold|Copper|Rose|Silver|Natural|Clear)\b/i],
+
+  // SEMI
+  'Wella Color Fresh': [/^\s*(?:\d{1,2}\.\d|\d{1,2})\b/],
+  'Goldwell Elumen': [/^\s*(?:@[\w]+|\w+-\w+|\w{1,2}\d{1,2})\b/],
+  'Pravana ChromaSilk Vivids': [/^\s*(?:VIVIDS|Silver|Clear|Magenta|Pink|Blue|Green|Yellow|Orange|Red|Purple)\b/i],
+  'Schwarzkopf Chroma ID': [/^\s*(?:\d{1,2}-\d{1,2}|Clear|Bonding)\b/i],
+  'Matrix SoColor Cult': [/^\s*(?:Clear|Neon|Pastel|Teal|Pink|Blue|Purple|Red)\b/i],
+};
+
+function stepHasAllowedCodes(step, brand) {
+  if (!step || !step.formula) return true;
+  const pats = BRAND_PATTERNS[brand] || [];
+  if (pats.length === 0) return true;
+  return pats.some(rx => rx.test(step.formula));
+}
+
+// -------------------- Analysis-aware guard (Pravana Express) ----------------
+function expressTonesGuard(out, analysis, brand) {
+  if (!out || !Array.isArray(out.scenarios) || brand !== 'Pravana ChromaSilk Express Tones') return out;
+  const a = (analysis || '').toLowerCase();
+
+  const isJetBlack = /\b(level\s*1|level\s*2|jet\s*black|solid\s*black)\b/.test(a);
+  const wantsVividRed = /\b(vivid|vibrant|rich)\s+red\b/.test(a) || /\b(cherry|ruby|crimson|scarlet)\b/.test(a);
+
+  // Not suitable on level 1–2 black (don't suggest Clear)
+  if (isJetBlack) {
+    const ends = { formula: 'N/A — Express Tones require pre-lightened level 8–10; use PRAVANA VIVIDS || a permanent plan.', timing: '', note: null };
+    out.scenarios = [{
+      title: 'Primary plan',
+      condition: null, target_level: null, roots: null, melt: null, ends,
+      processing: ['Not applicable for this photo with Express Tones.'],
+      confidence: 0.85
+    }];
+    return out;
+  }
+
+  // For vivid/rich red inspo, Rose won’t create saturation: recommend Vivids first
+  if (wantsVividRed) {
+    const ends = { formula: 'N/A — Express Tones are toners. For saturated red, formulate with PRAVANA VIVIDS Red/Copper; optional quick 5-min Express Tones Rose overlay only on pre-lightened hair.', timing: '', note: null };
+    out.scenarios = [{
+      title: 'Primary plan',
+      condition: null, target_level: null, roots: null, melt: null, ends,
+      processing: ['Use PRAVANA VIVIDS for saturation; gloss later if needed.'],
+      confidence: 0.85
+    }];
+    return out;
+  }
+
+  // Warm blonde steer
+  const wantsWarmBlonde = /\b(warm|golden|honey|caramel)\b.*\bblonde\b/.test(a) || /\bwarm blonde\b/.test(a);
+  if (wantsWarmBlonde && out.scenarios[0]) {
+    const s = out.scenarios[0];
+    const ends = s.ends || { formula: '', timing: '', note: null };
+    ends.formula = 'Beige + Gold (1:1.5) with PRAVANA Zero Lift Creme Developer';
+    ends.timing = 'Process 5 minutes only; watch visually.';
+    out.scenarios[0] = { ...s, ends };
+  }
+  return out;
+}
+
+// --------------------- Alternate/Primary validators (generic) ---------------
+function isBlackOrSingleVivid(analysis) {
+  const a = (analysis || '').toLowerCase();
+  const black = /\b(level\s*[12]\b|solid\s*black)\b/.test(a);
+  const vividHint = /\b(single\s+vivid|vivid|fashion\s+shade|magenta|pink|blue|green|purple|teal|neon)\b/.test(a);
+  return black || vividHint;
+}
+
+function extractNumericLevels(text) {
+  const levels = [];
+  const rx = /\b0?([1-9]|1[0-2])\s*[A-Z@]?/g;
+  let m;
+  while ((m = rx.exec(text)) !== null) {
+    const n = parseInt(m[1], 10);
+    if (!isNaN(n)) levels.push(n);
+  }
+  return levels;
+}
+
+function altHasHighLevelToner(sc) {
+  const parts = [sc?.roots?.formula, sc?.melt?.formula, sc?.ends?.formula].filter(Boolean).join(' ');
+  const lvls = extractNumericLevels(parts);
+  return lvls.some(n => n >= 7);
+}
+
+function applyValidator(out, category, brand) {
+  if (!out || !Array.isArray(out.scenarios)) return out;
+  if (category === 'permanent') return out;
+  const patched = { ...out };
+  patched.scenarios = out.scenarios.map(sc => {
+    const s = { ...sc };
+    const title = (s.title || '').toLowerCase();
+    const isAlternate = title.includes('alternate');
+    if (!isAlternate) return s;
+
+    if (isBlackOrSingleVivid(out.analysis) || altHasHighLevelToner(s)) {
+      s.na = true;
+      s.note = 'Not applicable for this photo/brand line.';
+      return s;
+    }
+    const rootsOK = stepHasAllowedCodes(s.roots, brand);
+    const meltOK  = stepHasAllowedCodes(s.melt,  brand);
+    const endsOK  = stepHasAllowedCodes(s.ends,  brand);
+    if (!(rootsOK && meltOK && endsOK)) {
+      s.na = true;
+      s.note = 'Not applicable for this photo/brand line.';
+    }
+    return s;
+  });
+  return patched;
+}
+
+// Validate primary too (prevents cross-brand codes)
+function validatePrimaryScenario(out, brand) {
+  if (!out || !Array.isArray(out.scenarios) || out.scenarios.length === 0) return out;
+  const s = out.scenarios[0];
+  const rootsOK = stepHasAllowedCodes(s.roots, brand);
+  const meltOK  = stepHasAllowedCodes(s.melt,  brand);
+  const endsOK  = stepHasAllowedCodes(s.ends,  brand);
+  if (!(rootsOK && meltOK && endsOK)) {
+    s.processing = s.processing || [];
+    s.processing.unshift('Adjusted: removed non-brand shade codes.');
+    const dropFirst = (st) => st && st.formula ? { ...st, formula: st.formula.replace(/^[^\s]+/, '').trim() } : st;
+    s.roots = dropFirst(s.roots);
+    s.melt  = dropFirst(s.melt);
+    s.ends  = dropFirst(s.ends);
+  }
+  return out;
+}
+
+// -------------------- NEW: Normalize 1–2 black to 1N on supported lines -----
+const N_SERIES_BLACK_BRANDS = new Set([
+  'Redken Shades EQ',
+  'Paul Mitchell The Demi',
+  'Matrix SoColor Sync',
+  'Goldwell Colorance',
+]);
+
+function isLevel12Black(analysis) {
+  const a = (analysis || '').toLowerCase();
+  return /\b(level\s*1(\s*[-–]\s*2)?|level\s*2|deep\s+black|jet\s+black|solid\s+black)\b/.test(a);
+}
+
+function replace1Awith1N(step) {
+  if (!step || !step.formula) return step;
+  return { ...step, formula: step.formula.replace(/\b1A\b/g, '1N') };
+}
+
+function enforceNeutralBlack(out, analysis, brand) {
+  if (!out || !Array.isArray(out.scenarios)) return out;
+  if (!N_SERIES_BLACK_BRANDS.has(brand)) return out;
+  if (!isLevel12Black(analysis)) return out;
+
+  const scenarios = out.scenarios.map(sc => {
+    const s = { ...sc };
+    s.roots = replace1Awith1N(s.roots);
+    s.melt  = replace1Awith1N(s.melt);
+    s.ends  = replace1Awith1N(s.ends);
+    return s;
+  });
+  return { ...out, scenarios };
+}
 
 // ---------------------------- Prompt Builders ------------------------------
-// buildSystemPrompt, SHARED_JSON_SHAPE, brandRuleLine … (unchanged) …
+const SHARED_JSON_SHAPE = `
+Return JSON only, no markdown. Use exactly this shape:
+
+{
+  "analysis": "<1 short sentence>",
+  "scenarios": [
+    {
+      "title": "Primary plan",
+      "condition": null,
+      "target_level": null,
+      "roots": null | { "formula": "...", "timing": "...", "note": null },
+      "melt":  null | { "formula": "...", "timing": "...", "note": null },
+      "ends":  { "formula": "...", "timing": "...", "note": null },
+      "processing": ["Step 1...", "Step 2...", "Rinse/condition..."],
+      "confidence": 0.0
+    },
+    { "title": "Alternate (cooler)", "condition": null, "target_level": null, "roots": null|{...}, "melt": null|{...}, "ends": {...}, "processing": ["..."], "confidence": 0.0 },
+    { "title": "Alternate (warmer)", "condition": null, "target_level": null, "roots": null|{...}, "melt": null|{...}, "ends": {...}, "processing": ["..."], "confidence": 0.0 }
+  ]
+}
+`.trim();
+
+function brandRuleLine(brand) {
+  const r = BRAND_RULES[brand];
+  if (!r) return '';
+  return `Official mixing rule for ${brand}: ratio ${r.ratio}; developer/activator: ${r.developer}. ${r.notes}`;
+}
+
+function buildSystemPrompt(category, brand) {
+  const header = `You are Formula Guru, a master colorist. Use only: "${brand}". Output must be JSON-only && match the app schema.`;
+  const brandRule = brandRuleLine(brand);
+  const ratioGuard = `
+IMPORTANT — MIXING RULES
+- Use the **official mixing ratio shown below** for ${brand} in ALL formula strings.
+- Include the **developer/activator product name** exactly as provided below when applicable.
+- Only use exception ratios (e.g., high-lift || pastel/gloss) if clearly relevant, and state the reason.
+${brandRule}
+`.trim();
+
+  if (category === 'permanent') {
+    return `
+${header}
+
+CATEGORY = PERMANENT (root gray coverage)
+${ratioGuard}
+
+Goal: If the photo shows greys at the root, estimate grey % (<25%, 25–50%, 50–75%, 75–100%) and provide a firm ROOT COVERAGE formula that matches the mids/ends.
+
+Rules:
+- Anchor coverage with a natural/neutral series for ${brand}; add supportive tone to match the photo.
+- Include **developer volume and the exact ratio** in the ROOTS formula (e.g., "6N + 6.3 (${BRAND_RULES[brand]?.ratio || '1:1'}) with 20 vol <developer>").
+- Provide a compatible mids/ends plan (refresh vs. band control).
+- Processing must call out: sectioning, application order (roots → mids → ends), timing, and rinse/aftercare.
+- Return exactly 3 scenarios: Primary, Alternate (cooler), Alternate (warmer).
+
+${SHARED_JSON_SHAPE}
+`.trim();
+  }
+
+  if (category === 'semi') {
+    return `
+${header}
+
+CATEGORY = SEMI-PERMANENT (direct/acidic deposit-only; ${brand})
+${ratioGuard}
+
+Rules:
+- **No developer** in formulas (RTU where applicable). Use brand Clear/diluter for sheerness.
+- Do not promise full grey coverage; you may blend/soften the appearance of grey.
+- Return up to 3 scenarios:
+  - Primary (always required)
+  - Alternate (cooler) and/or Alternate (warmer) **only if realistic and available**.
+
+${SHARED_JSON_SHAPE}
+`.trim();
+  }
+
+  // Demi
+  return `
+${header}
+
+CATEGORY = DEMI (gloss/toner; brand-consistent behavior)
+${ratioGuard}
+
+Rules:
+- Gloss/toner plans only from ${brand}. In **every formula**, include the ratio and the **developer/activator name**.
+- Keep processing up to ~20 minutes unless brand guidance requires otherwise.
+- No lift promises; no grey-coverage claims.
+- Return up to 3 scenarios:
+  - Primary (always required)
+  - Alternate (cooler) and/or Alternate (warmer) **only if realistic and available**.
+- If level 1–2 black or single-vivid context, mark alternates **Not applicable**.
+- Do not invent shade codes. Only use codes that exist for ${brand}.
+
+${SHARED_JSON_SHAPE}
+`.trim();
+}
 
 // -------------------------- OpenAI Call Helper -----------------------------
-// chatAnalyze … (unchanged) …
+async function chatAnalyze({ category, brand, dataUrl }) {
+  const system = buildSystemPrompt(category, brand);
+
+  const messages = [
+    { role: 'system', content: system },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: `Analyze the attached photo. Category: ${category}. Brand: ${brand}. Provide 3 scenarios following the JSON schema.` },
+        { type: 'image_url', image_url: { url: dataUrl } }
+      ],
+    },
+  ];
+
+  const resp = await client.chat.completions.create({
+    model: MODEL,
+    messages,
+    temperature: 0.25,
+    response_format: { type: 'json_object' },
+  });
+
+  const text = resp.choices?.[0]?.message?.content?.trim() || '{}';
+  try {
+    return JSON.parse(text);
+  } catch {
+    const m = text.match(/\{[\s\S]*\}$/);
+    return m ? JSON.parse(m[0]) : { analysis: 'Parse error', scenarios: [] };
+  }
+}
 
 // --------------------------------- Routes ----------------------------------
 app.get('/health', (_req, res) => res.json({ ok: true }));
-app.get('/brands', (_req, res) => res.json({ demi: DEMI_BRANDS, permanent: PERMANENT_BRANDS, semi: SEMI_BRANDS }));
+
+app.get('/brands', (_req, res) => {
+  res.json({ demi: DEMI_BRANDS, permanent: PERMANENT_BRANDS, semi: SEMI_BRANDS });
+});
 
 app.post('/analyze', upload.single('photo'), async (req, res) => {
-  // … (unchanged body from your last working version) …
+  let tmpPath;
+  try {
+    if (!process.env.OPENAI_API_KEY) return res.status(401).json({ error: 'Missing OPENAI_API_KEY' });
+    if (!req.file) return res.status(400).json({ error: "No photo uploaded (field 'photo')." });
+
+    const categoryRaw = (req.body?.category || 'demi').toString().trim().toLowerCase();
+    const category = ['permanent', 'semi', 'demi'].includes(categoryRaw) ? categoryRaw : 'demi';
+    const brand = normalizeBrand(category, req.body?.brand);
+
+    tmpPath = req.file.path;
+    const mime = req.file.mimetype || 'image/jpeg';
+    const b64 = await fs.readFile(tmpPath, { encoding: 'base64' });
+    const dataUrl = `data:${mime};base64,${b64}`;
+
+    let out = await chatAnalyze({ category, brand, dataUrl });
+
+    // 1) Enforce brand ratio/dev + timing overrides
+    out = enforceBrandConsistency(out, brand);
+
+    // 2) Suitability guard for Pravana Express Tones
+    out = expressTonesGuard(out, out.analysis, brand);
+
+    // 3) Normalize 1–2 black to 1N on supported lines
+    out = enforceNeutralBlack(out, out.analysis, brand);
+
+    // 4) Validate alternates (Demi/Semi)
+    out = applyValidator(out, category, brand);
+
+    // 5) Validate Primary scenario as well
+    out = validatePrimaryScenario(out, brand);
+
+    // 6) Collapse to a single scenario for Demi/Semi
+    if (category !== 'permanent' && Array.isArray(out.scenarios)) {
+      const primary = out.scenarios.find(s => (s.title || '').toLowerCase().includes('primary')) || out.scenarios[0];
+      out.scenarios = primary ? [primary] : [];
+    }
+
+    return res.json(out);
+  } catch (err) {
+    console.error(err);
+    return res.status(502).json({ error: 'Upstream error', detail: String(err?.message || err) });
+  } finally {
+    if (tmpPath) {
+      try { await fs.unlink(tmpPath); } catch {}
+    }
+  }
 });
 
 // ------------------------------- Start Guard -------------------------------
@@ -183,23 +618,307 @@ const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'test') {
 
   // ------------------------------ StylistSync Assistant ------------------------------
-  // Calendar-aware, action-synthesizing, adapter-normalized
+  // Calendar-aware, date-locking, action-synthesizing, adapter-normalized
   app.post('/assistant', async (req, res) => {
     try {
-      const { message, timezone = "America/Los_Angeles", nowISO, context = {} } = req.body || {};
+      const {
+        message,
+        timezone = "America/Los_Angeles",
+        nowISO,
+        context = {}
+      } = req.body || {};
+
       if (!message || typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({ error: 'Missing message' });
       }
 
-      // ---- Time helpers (resolve “this/upcoming Monday 2pm” → ISO) ----
-      // … [resolveWeekdayPhrase, extractSlots functions stay intact] …
+      // ---------- Time helpers (PT ISO with offset) ----------
+      const now = nowISO ? new Date(nowISO) : new Date();
 
-      // ---- Call OpenAI with context ----
-      // … [unchanged system/user messages, completion call] …
+      const offsetFromISO = (iso) => {
+        const m = typeof iso === "string" ? iso.match(/([+-]\d{2}:\d{2})$/) : null;
+        // default to -07:00 (PDT) if we can't infer; the device TZ will render local time anyway
+        return m ? m[1] : "-07:00";
+      };
+      const ptOffset = offsetFromISO(nowISO || new Date().toISOString());
 
-      // ---- Parse + normalize actions ----
-      // … [adapter from my last answer: normalizeOne, toMinutes, add fallback createClient + createAppointment if missing] …
+      const WeekIndex = { sunday:0, monday:1, tuesday:2, wednesday:3, thursday:4, friday:5, saturday:6 };
 
+      // nearest-future resolver for "this/next/upcoming Monday 2pm"
+      function resolveWeekdayPhrase(text) {
+        const s = (text || "").toLowerCase();
+        const wk = Object.keys(WeekIndex).find(d => s.includes(d));
+        if (!wk) return null;
+
+        // time extraction (default 09:00 if absent)
+        let hh = 9, mm = 0;
+        const tm = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
+        if (tm) {
+          hh = parseInt(tm[1], 10);
+          mm = tm[2] ? parseInt(tm[2], 10) : 0;
+          const ap = tm[3];
+          if (ap === 'pm' && hh < 12) hh += 12;
+          if (ap === 'am' && hh === 12) hh = 0;
+        }
+
+        // compute next occurrence (nearest future)
+        const tgt = WeekIndex[wk];
+        const base = new Date(now);
+        // Use UTC weekday for stable math; we only need day jumps (offset doesn't affect modulo)
+        const dow = base.getUTCDay();
+        let add = (tgt - dow + 7) % 7;
+
+        const saysNextOrUpcoming = /(?:\bnext\b|\bupcoming\b)/.test(s);
+        const saysThis = /\bthis\b/.test(s);
+
+        // If it's "this" and today is same weekday, push to next week; also push if "next"/"upcoming"
+        if (add === 0 && (saysThis || saysNextOrUpcoming)) add = 7;
+        if (add === 0) add = 7; // always future (never past)
+
+        const future = new Date(base.getTime() + add * 24 * 3600 * 1000);
+        const yyyy = future.getUTCFullYear();
+        const mm2  = String(future.getUTCMonth() + 1).padStart(2, '0');
+        const dd2  = String(future.getUTCDate()).padStart(2, '0');
+        const HH   = String(hh).padStart(2, '0');
+        const MM   = String(mm).padStart(2, '0');
+        return `${yyyy}-${mm2}-${dd2}T${HH}:${MM}:00${ptOffset}`;
+      }
+
+      // slot extraction from message (very light)
+      function extractSlots(text) {
+        const slots = {};
+        const lower = text.toLowerCase();
+
+        // weekday
+        if (/(sunday|monday|tuesday|wednesday|thursday|friday|saturday)/.test(lower)) {
+          const iso = resolveWeekdayPhrase(text);
+          if (iso) slots.dateISO = iso;
+        }
+
+        // explicit $price
+        const mPrice = text.match(/\$\s*(\d{2,4})(?:\.\d{2})?/);
+        if (mPrice) slots.price = Number(mPrice[1]);
+
+        // duration "2.5 hours", "150 min"
+        const mDur = text.match(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?)/i);
+        if (mDur) {
+          const n = parseFloat(mDur[1]);
+          slots.durationMinutes = /min/i.test(mDur[2]) ? Math.round(n) : Math.round(n * 60);
+        }
+
+        // client name after "named" or "for"
+        const mClient = text.match(/\bnamed\s+([A-Za-z][\w'-]+)/i) || text.match(/\bfor\s+([A-Za-z][\w'-]+)\b/i);
+        if (mClient) slots.clientName = mClient[1];
+
+        // service/title (word(s) after "for ...", but avoid keywords)
+        const mSvc = text.match(/\bfor\s+(?:a\s+)?([A-Za-z ][A-Za-z ]*)/i);
+        if (mSvc) {
+          const raw = mSvc[1].trim();
+          if (!/\b(appointment|client|named|this|next|upcoming|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(raw)) {
+            const svc = raw.replace(/\s+/g, ' ').trim();
+            slots.serviceType = svc.charAt(0).toUpperCase() + svc.slice(1);
+            slots.title = slots.serviceType;
+          }
+        }
+
+        return slots;
+      }
+
+      // ---------- Local synthesizer (used if OpenAI missing / errors, or to fill gaps) ----------
+      function localSynthesize(message, context) {
+        const slots = extractSlots(message);
+        const warnings = [];
+        const actions = [];
+
+        if (slots.clientName) {
+          const known = Array.isArray(context.clients)
+            ? context.clients.some(n => (n || '').toLowerCase() === slots.clientName.toLowerCase())
+            : false;
+          if (!known) {
+            actions.push({
+              type: 'createClient',
+              payload: { name: slots.clientName, contact: null, notes: null }
+            });
+            warnings.push(`Client '${slots.clientName}' not found; will be created.`);
+          }
+        }
+
+        if (slots.dateISO) {
+          actions.push({
+            type: 'createAppointment',
+            payload: {
+              title: slots.title || 'Appointment',
+              dateISO: slots.dateISO,
+              clientName: slots.clientName || null,
+              notes: null,
+              serviceType: slots.serviceType || null,
+              durationMinutes: slots.durationMinutes || 60,
+              price: slots.price || null
+            }
+          });
+
+          const appts = Array.isArray(context.appointments) ? context.appointments : [];
+          const conflict = appts.find(a => a?.dateISO === slots.dateISO);
+          if (conflict) {
+            warnings.push(`Time ${slots.dateISO} overlaps with '${conflict.title}' for ${conflict.clientName || "someone"}.`);
+          }
+        }
+
+        const reply = actions.length
+          ? `Booked ${slots.clientName ? `${slots.clientName} ` : ''}${slots.title || 'appointment'} for ${slots.dateISO?.replace('T', ' at ') || 'the requested time'}.`
+          : 'I can help with that.';
+
+        return { reply, actions, warnings };
+      }
+
+      // If no API key, short-circuit with local synthesis (still returns actions)
+      if (!process.env.OPENAI_API_KEY) {
+        const fallback = localSynthesize(message, context);
+        return res.json(fallback);
+      }
+
+      // ---------- Build system prompt (LLM used; server will still synthesize if needed) ----------
+      const sys = `You are StylistSync — an AI hairstylist assistant inside an iOS app.
+
+Rules:
+- Always return strict JSON with keys "reply" (string), "actions" (array), "warnings" (array).
+- For requests to book/create/delete/adjust in-app, you MUST include structured actions.
+- Timezone is ${timezone}. "now" is ${now.toISOString()}. If user says "this/upcoming/next Monday 2pm", resolve to the nearest FUTURE date in PT and return ISO with offset like 2025-09-15T14:00:00-07:00.
+- Prefer clientName over IDs. If client not found in context, include a warning that it will be created.
+- Do NOT mutate data; only propose actions.
+
+Context (names only):
+clients: ${(context.clients || []).slice(0, 50).join(", ")}
+appt count: ${(context.appointments || []).length}`;
+
+      const userMsg = String(message);
+
+      // ---------- Call OpenAI with catch → local fallback ----------
+      let raw = "";
+      try {
+        const resp = await client.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: 'system', content: sys },
+            { role: 'user', content: userMsg },
+          ],
+          temperature: 0.2,
+          response_format: { type: 'json_object' }
+        });
+        raw = resp.choices?.[0]?.message?.content?.trim() || "";
+      } catch (apiErr) {
+        console.error('OpenAI error:', apiErr?.message || apiErr);
+        const fallback = localSynthesize(userMsg, context);
+        return res.json(fallback);
+      }
+
+      let parsed = null;
+      try { parsed = JSON.parse(raw); } catch { parsed = null; }
+
+      // ---------- Adapter: normalize legacy/LLM shapes to the app contract ----------
+      function toMinutes(x) {
+        if (x == null) return null;
+        const s = String(x).trim();
+        const mHr = s.match(/^(\d+(?:\.\d+)?)\s*(hours?|hrs?|h)$/i);
+        const mMin = s.match(/^(\d+(?:\.\d+)?)\s*(minutes?|mins?|m)$/i);
+        if (mHr) return Math.round(parseFloat(mHr[1]) * 60);
+        if (mMin) return Math.round(parseFloat(mMin[1]));
+        const n = Number(s);
+        return Number.isFinite(n) ? n : null;
+      }
+
+      function normalizeOne(a) {
+        // Already correct?
+        if (a && a.type && a.payload) return a;
+
+        // Legacy create_appointment
+        if (a && (a.action === 'create_appointment' || a.type === 'create_appointment')) {
+          const durationMinutes =
+            a.durationMinutes ?? toMinutes(a.duration) ?? 60;
+
+          const price =
+            (typeof a.price === 'string' ? Number(a.price.replace(/^\$/, '')) : a.price) ?? null;
+
+          const title = a.title || a.service || a.serviceType || 'Appointment';
+
+          return {
+            type: 'createAppointment',
+            payload: {
+              title,
+              dateISO: a.dateISO || a.startTime || a.start || a.when || null,
+              clientName: a.clientName || a.name || null,
+              notes: a.notes ?? null,
+              serviceType: a.serviceType || a.service || null,
+              durationMinutes,
+              price
+            }
+          };
+        }
+
+        // Legacy create_client
+        if (a && (a.action === 'create_client' || a.type === 'create_client')) {
+          return {
+            type: 'createClient',
+            payload: { name: a.name || a.clientName || '', contact: a.contact ?? null, notes: a.notes ?? null }
+          };
+        }
+
+        // Legacy delete_appointment
+        if (a && (a.action === 'delete_appointment' || a.type === 'delete_appointment')) {
+          return {
+            type: 'deleteAppointment',
+            payload: {
+              dateISO: a.dateISO || a.startTime || a.when || null,
+              title: a.title || a.service || 'Appointment',
+              clientName: a.clientName || null
+            }
+          };
+        }
+
+        // Legacy adjust_inventory
+        if (a && (a.action === 'adjust_inventory' || a.type === 'adjust_inventory')) {
+          return {
+            type: 'adjustInventory',
+            payload: {
+              productName: a.productName || a.item || '',
+              delta: Number(a.delta ?? a.change ?? 0),
+              note: a.note ?? null
+            }
+          };
+        }
+
+        // Legacy delete_client
+        if (a && (a.action === 'delete_client' || a.type === 'delete_client')) {
+          return {
+            type: 'deleteClient',
+            payload: { name: a.name || a.clientName || '' }
+          };
+        }
+
+        // Unknown shape → drop
+        return null;
+      }
+
+      if (!parsed || typeof parsed !== 'object') parsed = { reply: 'OK', actions: [], warnings: [] };
+      if (!Array.isArray(parsed.actions)) parsed.actions = [];
+      parsed.actions = parsed.actions.map(normalizeOne).filter(Boolean);
+      if (!Array.isArray(parsed.warnings)) parsed.warnings = [];
+
+      // ---------- Guaranteed actions / warnings ----------
+      const wantsAction =
+        /(book|schedule|add|create|delete|cancel|adjust|reschedule)/i.test(userMsg) &&
+        /(appointment|client|inventory|product|calendar)/i.test(userMsg);
+
+      if (wantsAction && parsed.actions.length === 0) {
+        const synth = localSynthesize(userMsg, context);
+        parsed.actions = synth.actions;
+        parsed.warnings.push(...(synth.warnings || []));
+        if (!parsed.reply || typeof parsed.reply !== 'string' || !parsed.reply.trim()) {
+          parsed.reply = synth.reply;
+        }
+      }
+
+      if (typeof parsed.reply !== 'string') parsed.reply = String(parsed.reply ?? '');
       return res.json(parsed);
     } catch (err) {
       console.error('assistant error', err);
