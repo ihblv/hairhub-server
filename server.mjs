@@ -648,63 +648,98 @@ if (process.env.NODE_ENV !== 'test') {
 
 app.post('/assistant', async (req, res) => {
   try {
-    const { message } = req.body || {};
+    const { message, timezone = "America/Los_Angeles", nowISO, context = {} } = req.body || {};
     if (!message || typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({ error: 'Missing message' });
     }
+    const now = nowISO ? new Date(nowISO) : new Date();
 
-    const sys = `You are StylistSync — an AI hairstylist assistant embedded in an iOS app.
-Your job is twofold:
-1) Answer hair questions normally (formulation advice, color theory, pricing tips, scheduling best practices).
-2) When the user asks to DO something in the app (create/edit/delete client, appointment, inventory), propose **structured actions** for the client app to preview and confirm.
+    // Helper: get offset like "-07:00" from an ISO string (fallback -07:00)
+    const offsetFromISO = (iso) => {
+      const m = typeof iso === "string" ? iso.match(/([+-]\d{2}:\d{2})$/) : null;
+      return m ? m[1] : "-07:00";
+    };
+    const ptOffset = offsetFromISO(nowISO || new Date().toISOString());
 
-CRITICAL RULES
-- Output **strict JSON only** with keys: "reply" (string), "actions" (array), "warnings" (array).
-- Never mutate data yourself. Only PROPOSE actions for the app to execute on confirm.
-- If the user asks only for info, return just "reply" and an empty "actions".
-- Convert natural dates (e.g., "this Monday 2pm") to a concrete ISO8601 with offset in America/Los_Angeles, e.g. "2025-09-15T14:00:00-07:00". Assume future dates if ambiguous.
-- Prefer clientName (string) over IDs; the app will map name→ID or create if needed.
-- Include warnings for conflicts/ambiguities (e.g., overlapping times, name collisions, unknown product).
+    // Parse simple phrases like "this Monday 2pm", "upcoming Monday at 2:30 pm"
+    const weekdayIndex = { sunday:0, monday:1, tuesday:2, wednesday:3, thursday:4, friday:5, saturday:6 };
+    function resolveWeekday(phrase) {
+      const s = phrase.toLowerCase();
+      const wk = Object.keys(weekdayIndex).find(d => s.includes(d));
+      if (!wk) return null;
+      let hh = 9, mm = 0;
+      let timeMatch = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
+      if (timeMatch) {
+        hh = parseInt(timeMatch[1],10);
+        mm = timeMatch[2] ? parseInt(timeMatch[2],10) : 0;
+        const ampm = timeMatch[3];
+        if (ampm === 'pm' && hh < 12) hh += 12;
+        if (ampm === 'am' && hh === 12) hh = 0;
+      }
+      const tgtDow = weekdayIndex[wk];
+      const nowPT = new Date(now);
+      const dow = nowPT.getUTCDay();
+      let add = (tgtDow - dow + 7) % 7;
+      const isNext = /next|upcoming/.test(s) || (/this/.test(s) and add===0);
+      if (add === 0 or isNext) add += 7;
+      const target = new Date(nowPT.getTime() + add*24*3600*1000);
+      const yyyy = target.getUTCFullYear();
+      const mm2 = String(target.getUTCMonth()+1).padStart(2,'0');
+      const dd2 = String(target.getUTCDate()).padStart(2,'0');
+      const HH = String(hh).padStart(2,'0');
+      const MM = String(mm).padStart(2,'0');
+      const iso = `${yyyy}-${mm2}-${dd2}T${HH}:${MM}:00${ptOffset}`;
+      return iso;
+    }
 
-SUPPORTED ACTION TYPES (v1)
-createClient
-{ "type": "createClient", "payload": { "name": "Full Name", "contact": null, "notes": null } }
+    function extractSlots(text) {
+      const slots = {};
+      const mWeekday = text.toLowerCase().match(/\b(this|upcoming|next)?\s*(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
+      if (mWeekday) {
+        const iso = resolveWeekday(text);
+        if (iso) slots.dateISO = iso;
+      }
+      const mTime = text.toLowerCase().match(/at\s+(\d{1,2}(:\d{2})?\s*(am|pm)?)/);
+      if (mTime && !slots.dateISO) {
+        const timeStr = mTime[1];
+        const iso = resolveWeekday(`next monday ${timeStr}`); // fallback to next Monday if only time provided
+        if (iso) slots.dateISO = iso;
+      }
+      const mClientNamed = text.match(/named\s+([A-Za-z][\w'-]+)/i) || text.match(/\bfor\s+([A-Za-z][\w'-]+)\b/i);
+      if (mClientNamed) slots.clientName = mClientNamed[1];
+      const mService = text.match(/\bfor\s+(a\s+)?([A-Za-z ]+?)(?:\s+for|\s+at|\s+\$|\s+\d|\s*$)/i);
+      if (mService) {
+        const svc = mService[2].trim();
+        if (!/appointment|client|me|named|this|next|upcoming|monday|tuesday|wednesday|thursday|friday|saturday|sunday/i.test(svc)) {
+          slots.serviceType = svc[0].toUpperCase() + svc.slice(1);
+          slots.title = slots.serviceType;
+        }
+      }
+      const mPrice = text.match(/\$?\s*(\d{2,4})(?:\.\d{2})?\b/);
+      if (mPrice) slots.price = Number(mPrice[1]);
+      const mDur = text.match(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|min|minutes)/i);
+      if (mDur) {
+        const n = parseFloat(mDur[1]);
+        let mins = 0;
+        if (/min/.test(mDur[2])) mins = Math.round(n);
+        else mins = Math.round(n*60);
+        slots.durationMinutes = mins;
+      }
+      return slots;
+    }
 
-createAppointment
-{
-  "type": "createAppointment",
-  "payload": {
-    "title": "string",
-    "dateISO": "ISO-with-offset",
-    "clientName": "Kiara",
-    "notes": null,
-    "serviceType": "optional",
-    "durationMinutes": 60,
-    "price": 275
-  }
-}
+    const sys = `You are StylistSync — an AI hairstylist assistant inside an iOS app.
 
-adjustInventory
-{ "type": "adjustInventory", "payload": { "productName": "20 Volume Developer", "delta": -1, "note": null } }
+Rules:
+- Always return strict JSON with keys "reply" (string), "actions" (array), "warnings" (array).
+- For requests to book/create/delete/adjust in-app, you MUST include structured actions.
+- Timezone is ${timezone}. "now" is ${now.toISOString()}. If user says "this/upcoming/next Monday 2pm", resolve to the nearest FUTURE date in PT and return ISO with offset like 2025-09-15T14:00:00-07:00.
+- Prefer clientName over IDs. If client not found in context, include a warning that it will be created.
+- Do NOT mutate data; only propose actions.
 
-deleteAppointment
-{ "type": "deleteAppointment", "payload": { "dateISO": "ISO-with-offset", "title": "string", "clientName": "optional" } }
-
-deleteClient (ONLY if explicitly asked)
-{ "type": "deleteClient", "payload": { "name": "Exact Name" } }
-
-RESPONSE ENVELOPE EXAMPLE
-{
-  "reply": "Booked Kiara for Balayage on Mon Sep 15 at 2:00 PM.",
-  "actions": [
-    { "type": "createClient", "payload": { "name": "Kiara", "contact": null, "notes": null } },
-    { "type": "createAppointment", "payload": { "title": "Balayage", "dateISO": "2025-09-15T14:00:00-07:00", "clientName": "Kiara", "notes": null, "serviceType": "Balayage", "durationMinutes": 150, "price": 275 } }
-  ],
-  "warnings": ["Client 'Kiara' not found; will be created."]
-}
-
-If the user’s request is purely informational, produce:
-{ "reply": "<answer>", "actions": [], "warnings": [] }`;
+Context (names only):
+clients: ${(context.clients||[]).slice(0,50).join(", ")}
+appt count: ${(context.appointments||[]).length}`;
 
     const userMsg = String(message);
 
@@ -720,12 +755,48 @@ If the user’s request is purely informational, produce:
 
     const raw = resp.choices?.[0]?.message?.content?.trim() || "";
     let parsed = null;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      parsed = { reply: raw || "I’m here to help.", actions: [], warnings: [] };
+    try { parsed = JSON.parse(raw); } catch { parsed = null; }
+
+    const wantsAction = /(book|schedule|add|create|delete|cancel|adjust|reschedule)/i.test(userMsg) && /(appointment|client|inventory|product)/i.test(userMsg);
+    const actions = Array.isArray(parsed?.actions) ? parsed.actions : [];
+    const warnings = Array.isArray(parsed?.warnings) ? parsed.warnings : [];
+
+    if (wantsAction && actions.length === 0) {
+      const slots = extractSlots(userMsg);
+      const synthesized = [];
+
+      if (slots.clientName && !(context.clients||[]).some(n => (n||"").toLowerCase() === slots.clientName.toLowerCase())) {
+        synthesized.push({ type: "createClient", payload: { name: slots.clientName, contact: null, notes: null } });
+        warnings.push(`Client '${slots.clientName}' not found; will be created.`);
+      }
+
+      if (slots.dateISO) {
+        synthesized.push({
+          type: "createAppointment",
+          payload: {
+            title: slots.title || "Appointment",
+            dateISO: slots.dateISO,
+            clientName: slots.clientName || null,
+            notes: null,
+            serviceType: slots.serviceType || null,
+            durationMinutes: slots.durationMinutes || 60,
+            price: slots.price || null
+          }
+        });
+
+        const appts = Array.isArray(context.appointments) ? context.appointments : [];
+        const conflict = appts.find(a => a.dateISO && a.dateISO === slots.dateISO);
+        if (conflict) warnings.push(`Time ${slots.dateISO} overlaps with '${conflict.title}' for ${conflict.clientName || "someone"}.`);
+      }
+
+      parsed = {
+        reply: parsed?.reply || "Here’s what I can do:",
+        actions: synthesized,
+        warnings
+      };
     }
 
+    if (!parsed) parsed = { reply: raw || "I’m here to help.", actions: [], warnings: [] };
     if (typeof parsed.reply !== 'string') parsed.reply = String(parsed.reply ?? '');
     if (!Array.isArray(parsed.actions)) parsed.actions = [];
     if (!Array.isArray(parsed.warnings)) parsed.warnings = [];
@@ -735,7 +806,7 @@ If the user’s request is purely informational, produce:
     console.error('assistant error', err);
     res.status(500).json({ error: 'assistant_failed' });
   }
-});
+}););
 app.listen(PORT, () => console.log(`Formula Guru server running on :${PORT}`));
 }
 
