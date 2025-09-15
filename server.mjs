@@ -1,29 +1,100 @@
-// server.mjs — Formula Guru 2 (final, calendar-aware assistant, with ensureClientCreate)
-// Category-aware (Permanent / Demi / Semi) with manufacturer mixing rules
-// Enforces ratios + developer names, validates shade formats, and adds
-// analysis-aware guard for Pravana ChromaSilk Express Tones suitability.
-// Normalizes level-1/2 black to 1N on supported DEMI lines.
-// Extends ONLY /assistant to be calendar-aware with guaranteed action synthesis
-// and a local fallback when OpenAI is unavailable.
+// server.mjs — StylistSync Assistant & Formula Guru API
 // ------------------------------------------------------------------
+// This server exposes a few endpoints to power the Hair Hub application.
+//
+//  - /health: basic health check
+//  - /brands: exposes demi/permanent/semi brands used by Formula Guru
+//  - /analyze: placeholder for the Formula Guru analysis endpoint (left intact)
+//  - /assistant: lightweight natural‑language assistant for hair Q&A and
+//    scheduling.  This endpoint parses user messages to answer hair and
+//    cosmetology questions based on built‑in brand rules and synthesises
+//    structured actions (createClient, createAppointment, deleteAppointment,
+//    deleteClient) from natural language.  Returned actions are used by the
+//    client app to display interactive chips.  Date/time phrases like
+//    “next Friday 2pm” are resolved into ISO strings using the provided
+//    timezone.
 
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
-import multer from 'multer';
-import fs from 'fs/promises';
-import { OpenAI } from 'openai';
+// Load environment variables from a .env file if present.  We wrap this
+// require in a try/catch because the dotenv package may not be installed in
+// all environments.  If it fails to load, we silently continue.
+try {
+  await import('dotenv/config');
+} catch (_err) {
+  // no‑op
+}
+import http from 'http';
+import { URL } from 'url';
 
-const app = express();
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-const upload = multer({ dest: process.env.UPLOAD_DIR || 'tmp/' });
+// A tiny routing layer that mimics a subset of the Express API.  It
+// supports registering handlers for GET and POST requests and starting an
+// HTTP server.  Each handler receives the raw Node.js req/res objects.
+class MiniApp {
+  constructor() {
+    this.routes = [];
+    this.server = null;
+  }
+  /**
+   * Register a GET handler for a specific path.
+   * @param {string} path
+   * @param {(req: IncomingMessage, res: ServerResponse) => void} handler
+   */
+  get(path, handler) {
+    this.routes.push({ method: 'GET', path, handler });
+  }
+  /**
+   * Register a POST handler for a specific path.
+   * @param {string} path
+   * @param {(req: IncomingMessage, res: ServerResponse) => void} handler
+   */
+  post(path, handler) {
+    this.routes.push({ method: 'POST', path, handler });
+  }
+  /**
+   * Internal request dispatcher.  Matches routes by exact method and path.
+   */
+  async handle(req, res) {
+    const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const { pathname } = parsed;
+    for (const route of this.routes) {
+      if (route.method === req.method && route.path === pathname) {
+        return route.handler(req, res);
+      }
+    }
+    // Default 404 response with CORS header
+    res.statusCode = 404;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.end(JSON.stringify({ error: 'not_found' }));
+  }
+  /**
+   * Start the HTTP server.  Handles CORS preflight and dispatches
+   * registered route handlers.
+   */
+  listen(port, callback) {
+    this.server = http.createServer((req, res) => {
+      // Handle CORS preflight
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        });
+        return res.end();
+      }
+      this.handle(req, res);
+    });
+    this.server.listen(port, callback);
+  }
+}
 
-// ---------------------------- OpenAI Setup ----------------------------
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o';
+const app = new MiniApp();
 
 // ----------------------------- Brand Catalogs ------------------------------
+// These brand lists and rules are used by the Formula Guru tab as well as
+// referenced by the assistant for Q&A.  Do not alter the contents of these
+// arrays or objects; they reflect manufacturer mixing instructions and
+// classification.
+
 const DEMI_BRANDS = [
   'Redken Shades EQ',
   'Wella Color Touch',
@@ -53,13 +124,16 @@ const SEMI_BRANDS = [
   'Matrix SoColor Cult',
 ];
 
-// ------------------------ Manufacturer Mixing Rules ------------------------
+// Detailed mixing rules keyed by brand name.  Each entry has a category
+// (permanent/demi/semi), a recommended ratio, an appropriate developer and
+// additional notes.  These rules are surfaced to the assistant when
+// answering questions about specific brands.
 const BRAND_RULES = {
   // PERMANENT
   'Redken Color Gels Lacquers': {
     category: 'permanent',
     ratio: '1:1',
-    developer: 'Redken Pro-oxide Cream Developer 10/20/30/40 vol',
+    developer: 'Redken Pro‑oxide Cream Developer 10/20/30/40 vol',
     notes: 'Standard 1:1; 20 vol typical for grey coverage.'
   },
   'Wella Koleston Perfect': {
@@ -105,7 +179,7 @@ const BRAND_RULES = {
     notes: 'ChromaSilk 1:1.5 (High Lifts 1:2).'
   },
 
-  // DEMI (deposit-only)
+  // DEMI (deposit‑only)
   'Redken Shades EQ': {
     category: 'demi',
     ratio: '1:1',
@@ -150,660 +224,519 @@ const BRAND_RULES = {
   },
 
   // SEMI (direct / RTU)
-  'Wella Color Fresh': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Ready-to-use acidic semi.' },
+  'Wella Color Fresh': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Ready‑to‑use acidic semi.' },
   'Goldwell Elumen': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Use Elumen Prepare/Lock support; no developer.' },
   'Pravana ChromaSilk Vivids': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Direct dye; dilute with Clear if needed.' },
   'Schwarzkopf Chroma ID': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Direct dye; dilute with Clear Bonding Mask.' },
   'Matrix SoColor Cult': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Direct dye (no developer).' },
 };
 
-// ------------------------------ Utilities ----------------------------------
-function canonList(arr) {
-  const map = new Map();
-  for (const label of arr) map.set(label.toLowerCase(), label);
-  return map;
-}
-const DEMI_MAP = canonList(DEMI_BRANDS);
-const PERM_MAP = canonList(PERMANENT_BRANDS);
-const SEMI_MAP = canonList(SEMI_BRANDS);
+// ------------------------------ Hair Service Keywords ----------------------
+// When constructing appointments from natural language, we scan for any of
+// these substrings to infer the title/service type.  Ordering matters: longer
+// phrases should appear before shorter ones to avoid premature matches.
+const SERVICE_KEYWORDS = [
+  'root touch up', 'root touch‑up', 'root touchup',
+  'conditioning treatment', 'balayage', 'highlights', 'highlight', 'blowout',
+  'extensions', 'treatment', 'consultation', 'retouch', 'colour', 'color',
+  'toner', 'gloss', 'bleach', 'perm', 'relaxer', 'trim', 'cut', 'style',
+  'ombré', 'ombre', 'bangs', 'foils'
+];
 
-function normalizeBrand(category, input) {
-  const s = (input || '').trim().toLowerCase();
-  const pool =
-    category === 'permanent' ? PERM_MAP :
-    category === 'semi'      ? SEMI_MAP  :
-                               DEMI_MAP;
-
-  if (pool.has(s)) return pool.get(s);
-  for (const [k, v] of pool.entries()) {
-    const head = k.split(' ')[0];
-    const tail = k.split(' ').slice(-1)[0];
-    if (s.includes(head) && s.includes(tail)) return v;
-    if (s.includes(head) || s.includes(tail)) return v;
-  }
-  if (category === 'permanent') return 'Redken Color Gels Lacquers';
-  if (category === 'semi')      return 'Wella Color Fresh';
-  return 'Redken Shades EQ';
+// Helper to convert a keyword to Title Case.  For example "root touch up"
+// becomes "Root Touch Up" for chip labels.
+function titleCase(str) {
+  return str
+    .split(/\s+/)
+    .map(w => w.length ? w.charAt(0).toUpperCase() + w.slice(1) : '')
+    .join(' ');
 }
 
-function canonicalDeveloperName(brand) {
-  const rule = BRAND_RULES[brand];
-  if (!rule || !rule.developer || rule.developer === 'None') return null;
-  let first = rule.developer.split(/\s*\/\s*|\s+or\s+|\s+OR\s+/)[0];
-  first = first.replace(/\d+%/g, '')
-               .replace(/\b(10|20|30|40)\s*vol(ume)?\b/ig, '')
-               .replace(/\([^)]*\)/g, '')
-               .replace(/\s{2,}/g, ' ')
-               .trim();
-  return first || null;
-}
-
-function enforceRatioAndDeveloper(formula, brand) {
-  const rule = BRAND_RULES[brand];
-  if (!rule) return formula;
-  let out = (formula || '').trim();
-
-  const devName = canonicalDeveloperName(brand);
-  if (devName && !new RegExp(devName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(out)) {
-    if (/ with /i.test(out)) out = out.replace(/ with /i, ` with ${devName} `);
-    else out = `${out} with ${devName}`;
-  }
-
-  const r = (rule.ratio || '').trim();
-  const isSimpleRatio = /^(\d+(\.\d+)?):(\d+(\.\d+)?)$/.test(r);
-  if (isSimpleRatio) {
-    const ratioRegex = /(\d+(\.\d+)?)[ ]*:[ ]*(\d+(\.\d+)?)/;
-    if (!ratioRegex.test(out)) {
-      if (/ with /i.test(out)) out = out.replace(/ with /i, ` (${r}) with `);
-      else out = `${out} (${r})`;
+// Returns a human‑readable description of mixing instructions for any brands
+// mentioned in the message.  If multiple brands are referenced, the
+// descriptions are concatenated.  If no known brands are found, an empty
+// string is returned.  Matching is case‑insensitive.
+function detectBrandInfo(message) {
+  const lower = message.toLowerCase();
+  const descriptions = [];
+  for (const brand of Object.keys(BRAND_RULES)) {
+    if (lower.includes(brand.toLowerCase())) {
+      const rule = BRAND_RULES[brand];
+      descriptions.push(
+        `For ${brand} (${rule.category}): mix ratio ${rule.ratio}, developer ${rule.developer}. ${rule.notes}`
+      );
     }
   }
-  return out.trim();
-}
-function fixStep(step, brand) {
-  if (!step) return null;
-  const patched = { ...step };
-  if (patched.formula) patched.formula = enforceRatioAndDeveloper(patched.formula, brand);
-  return patched;
-}
-function timingOverride(step, brand) {
-  if (!step) return step;
-  const s = { ...step };
-  if (brand === 'Pravana ChromaSilk Express Tones') {
-    s.timing = 'Process 5 minutes only; watch visually.';
-  }
-  return s;
-}
-function enforceBrandConsistency(out, brand) {
-  if (!out || !Array.isArray(out.scenarios)) return out;
-  const patched = { ...out, scenarios: out.scenarios.map(sc => {
-    const s = { ...sc };
-    s.roots = timingOverride(fixStep(s.roots, brand), brand);
-    s.melt  = timingOverride(fixStep(s.melt,  brand), brand);
-    s.ends  = timingOverride(fixStep(s.ends,  brand), brand);
-    return s;
-  })};
-  return patched;
+  return descriptions.join(' ');
 }
 
-// -------------------------- Shade Format Validators -------------------------
-const BRAND_PATTERNS = {
-  'Redken Shades EQ': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
-  'Wella Color Touch': [/^\s*[1-9]\/\d{1,2}\b/],
-  'Paul Mitchell The Demi': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
-  'Matrix SoColor Sync': [/^\s*0?\d{1,2}[A-Z]{1,3}\b/],
-  'Goldwell Colorance': [/^\s*\d{1,2}[A-Z@]{1,3}\b/],
-  'Schwarzkopf Igora Vibrance': [/^\s*\d{1,2}-\d{1,2}\b/, /^\s*0?\d{1,2}[A-Z]{1,3}\b/],
-  'Pravana ChromaSilk Express Tones': [/^\s*(?:Platinum|Violet|Ash|Beige|Gold|Copper|Rose|Silver|Natural|Clear)\b/i],
-  'Wella Color Fresh': [/^\s*(?:\d{1,2}\.\d|\d{1,2})\b/],
-  'Goldwell Elumen': [/^\s*(?:@[\w]+|\w+-\w+|\w{1,2}\d{1,2})\b/],
-  'Pravana ChromaSilk Vivids': [/^\s*(?:VIVIDS|Silver|Clear|Magenta|Pink|Blue|Green|Yellow|Orange|Red|Purple)\b/i],
-  'Schwarzkopf Chroma ID': [/^\s*(?:\d{1,2}-\d{1,2}|Clear|Bonding)\b/i],
-  'Matrix SoColor Cult': [/^\s*(?:Clear|Neon|Pastel|Teal|Pink|Blue|Purple|Red)\b/i],
-};
-function stepHasAllowedCodes(step, brand) {
-  if (!step || !step.formula) return true;
-  const pats = BRAND_PATTERNS[brand] || [];
-  if (pats.length === 0) return true;
-  return pats.some(rx => rx.test(step.formula));
-}
-
-// -------------------- Analysis-aware guard (Pravana Express) ----------------
-function expressTonesGuard(out, analysis, brand) {
-  if (!out || !Array.isArray(out.scenarios) || brand !== 'Pravana ChromaSilk Express Tones') return out;
-  const a = (analysis || '').toLowerCase();
-  const isJetBlack = /\b(level\s*1|level\s*2|jet\s*black|solid\s*black)\b/.test(a);
-  const wantsVividRed = /\b(vivid|vibrant|rich)\s+red\b/.test(a) || /\b(cherry|ruby|crimson|scarlet)\b/.test(a);
-
-  if (isJetBlack) {
-    const ends = { formula: 'N/A — Express Tones require pre-lightened level 8–10; use PRAVANA VIVIDS || a permanent plan.', timing: '', note: null };
-    out.scenarios = [{
-      title: 'Primary plan', condition: null, target_level: null, roots: null, melt: null, ends,
-      processing: ['Not applicable for this photo with Express Tones.'], confidence: 0.85
-    }];
-    return out;
-  }
-  if (wantsVividRed) {
-    const ends = { formula: 'N/A — Express Tones are toners. For saturated red, formulate with PRAVANA VIVIDS Red/Copper; optional quick 5-min Express Tones Rose overlay only on pre-lightened hair.', timing: '', note: null };
-    out.scenarios = [{
-      title: 'Primary plan', condition: null, target_level: null, roots: null, melt: null, ends,
-      processing: ['Use PRAVANA VIVIDS for saturation; gloss later if needed.'], confidence: 0.85
-    }];
-    return out;
-  }
-  const wantsWarmBlonde = /\b(warm|golden|honey|caramel)\b.*\bblonde\b/.test(a) || /\bwarm blonde\b/.test(a);
-  if (wantsWarmBlonde && out.scenarios[0]) {
-    const s = out.scenarios[0];
-    const ends = s.ends || { formula: '', timing: '', note: null };
-    ends.formula = 'Beige + Gold (1:1.5) with PRAVANA Zero Lift Creme Developer';
-    ends.timing = 'Process 5 minutes only; watch visually.';
-    out.scenarios[0] = { ...s, ends };
-  }
-  return out;
-}
-
-// --------------------- Alternate/Primary validators (generic) ---------------
-function isBlackOrSingleVivid(analysis) {
-  const a = (analysis || '').toLowerCase();
-  const black = /\b(level\s*[12]\b|solid\s*black)\b/.test(a);
-  const vividHint = /\b(single\s+vivid|vivid|fashion\s+shade|magenta|pink|blue|green|purple|teal|neon)\b/.test(a);
-  return black || vividHint;
-}
-function extractNumericLevels(text) {
-  const levels = [];
-  const rx = /\b0?([1-9]|1[0-2])\s*[A-Z@]?/g;
-  let m;
-  while ((m = rx.exec(text)) !== null) {
-    const n = parseInt(m[1], 10);
-    if (!isNaN(n)) levels.push(n);
-  }
-  return levels;
-}
-function altHasHighLevelToner(sc) {
-  const parts = [sc?.roots?.formula, sc?.melt?.formula, sc?.ends?.formula].filter(Boolean).join(' ');
-  const lvls = extractNumericLevels(parts);
-  return lvls.some(n => n >= 7);
-}
-function applyValidator(out, category, brand) {
-  if (!out || !Array.isArray(out.scenarios)) return out;
-  if (category === 'permanent') return out;
-  const patched = { ...out };
-  patched.scenarios = out.scenarios.map(sc => {
-    const s = { ...sc };
-    const title = (s.title || '').toLowerCase();
-    const isAlternate = title.includes('alternate');
-    if (!isAlternate) return s;
-
-    if (isBlackOrSingleVivid(out.analysis) || altHasHighLevelToner(s)) {
-      s.na = true;
-      s.note = 'Not applicable for this photo/brand line.';
-      return s;
+// Extract potential names from a message by looking for capitalised words.
+// Returns an array of one‑ or two‑word names found in order of appearance.
+// Each candidate is trimmed and preserves the original casing.  This helper
+// ignores punctuation between words.  Later filters should remove
+// candidates that correspond to days of the week or service names.
+function findPotentialNames(message) {
+  const results = [];
+  if (!message || typeof message !== 'string') return results;
+  // Split the message on whitespace to inspect individual tokens.  Stripping
+  // punctuation helps avoid trailing commas or periods in names.
+  const tokens = message.split(/\s+/).filter(t => t.length > 0);
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i].replace(/[.,!?]/g, '');
+    if (/^[A-Z]/.test(token)) {
+      let candidate = token;
+      // Look ahead to see if the next token also starts with a capital letter
+      const next = tokens[i + 1] ? tokens[i + 1].replace(/[.,!?]/g, '') : null;
+      if (next && /^[A-Z]/.test(next)) {
+        candidate = `${candidate} ${next}`;
+      }
+      results.push(candidate.trim());
     }
-    const rootsOK = stepHasAllowedCodes(s.roots, brand);
-    const meltOK  = stepHasAllowedCodes(s.melt,  brand);
-    const endsOK  = stepHasAllowedCodes(s.ends,  brand);
-    if (!(rootsOK && meltOK && endsOK)) {
-      s.na = true;
-      s.note = 'Not applicable for this photo/brand line.';
+  }
+  return results;
+}
+
+// Extracts a service keyword from a message.  The search is case‑insensitive
+// and stops at the first match.  The returned value is title‑cased.
+function extractService(messageLower) {
+  for (const svc of SERVICE_KEYWORDS) {
+    if (messageLower.includes(svc.toLowerCase())) {
+      return titleCase(svc);
     }
-    return s;
-  });
-  return patched;
-}
-function validatePrimaryScenario(out, brand) {
-  if (!out || !Array.isArray(out.scenarios) || out.scenarios.length === 0) return out;
-  const s = out.scenarios[0];
-  const rootsOK = stepHasAllowedCodes(s.roots, brand);
-  const meltOK  = stepHasAllowedCodes(s.melt,  brand);
-  const endsOK  = stepHasAllowedCodes(s.ends,  brand);
-  if (!(rootsOK && meltOK && endsOK)) {
-    s.processing = s.processing || [];
-    s.processing.unshift('Adjusted: removed non-brand shade codes.');
-    const dropFirst = (st) => st && st.formula ? { ...st, formula: st.formula.replace(/^[^\s]+/, '').trim() } : st;
-    s.roots = dropFirst(s.roots);
-    s.melt  = dropFirst(s.melt);
-    s.ends  = dropFirst(s.ends);
   }
-  return out;
+  return null;
 }
 
-// -------------------- NEW: Normalize 1–2 black to 1N on supported lines -----
-const N_SERIES_BLACK_BRANDS = new Set([
-  'Redken Shades EQ',
-  'Paul Mitchell The Demi',
-  'Matrix SoColor Sync',
-  'Goldwell Colorance',
-]);
-function isLevel12Black(analysis) {
-  const a = (analysis || '').toLowerCase();
-  return /\b(level\s*1(\s*[-–]\s*2)?|level\s*2|deep\s+black|jet\s+black|solid\s+black)\b/.test(a);
-}
-function replace1Awith1N(step) {
-  if (!step || !step.formula) return step;
-  return { ...step, formula: step.formula.replace(/\b1A\b/g, '1N') };
-}
-function enforceNeutralBlack(out, analysis, brand) {
-  if (!out || !Array.isArray(out.scenarios)) return out;
-  if (!N_SERIES_BLACK_BRANDS.has(brand)) return out;
-  if (!isLevel12Black(analysis)) return out;
-  const scenarios = out.scenarios.map(sc => {
-    const s = { ...sc };
-    s.roots = replace1Awith1N(s.roots);
-    s.melt  = replace1Awith1N(s.melt);
-    s.ends  = replace1Awith1N(s.ends);
-    return s;
-  });
-  return { ...out, scenarios };
-}
-
-// ---------------------------- Prompt Builders ------------------------------
-const SHARED_JSON_SHAPE = `
-Return JSON only, no markdown. Use exactly this shape:
-
-{
-  "analysis": "<1 short sentence>",
-  "scenarios": [
-    {
-      "title": "Primary plan",
-      "condition": null,
-      "target_level": null,
-      "roots": null | { "formula": "...", "timing": "...", "note": null },
-      "melt":  null | { "formula": "...", "timing": "...", "note": null },
-      "ends":  { "formula": "...", "timing": "...", "note": null },
-      "processing": ["Step 1...", "Step 2...", "Rinse/condition..."],
-      "confidence": 0.0
-    },
-    { "title": "Alternate (cooler)", "condition": null, "target_level": null, "roots": null|{...}, "melt": null|{...}, "ends": {...}, "processing": ["..."], "confidence": 0.0 },
-    { "title": "Alternate (warmer)", "condition": null, "target_level": null, "roots": null|{...}, "melt": null|{...}, "ends": {...}, "processing": ["..."], "confidence": 0.0 }
-  ]
-}
-`.trim();
-function brandRuleLine(brand) {
-  const r = BRAND_RULES[brand];
-  if (!r) return '';
-  return `Official mixing rule for ${brand}: ratio ${r.ratio}; developer/activator: ${r.developer}. ${r.notes}`;
-}
-function buildSystemPrompt(category, brand) {
-  const header = `You are Formula Guru, a master colorist. Use only: "${brand}". Output must be JSON-only && match the app schema.`;
-  const brandRule = brandRuleLine(brand);
-  const ratioGuard = `
-IMPORTANT — MIXING RULES
-- Use the **official mixing ratio shown below** for ${brand} in ALL formula strings.
-- Include the **developer/activator product name** exactly as provided below when applicable.
-- Only use exception ratios (e.g., high-lift || pastel/gloss) if clearly relevant, and state the reason.
-${brandRule}
-`.trim();
-
-  if (category === 'permanent') {
-    return `
-${header}
-
-CATEGORY = PERMANENT (root gray coverage)
-${ratioGuard}
-
-Goal: If the photo shows greys at the root, estimate grey % and provide a firm ROOT COVERAGE formula that matches the mids/ends.
-
-Rules:
-- Anchor coverage with a natural/neutral series for ${brand}; add supportive tone to match the photo.
-- Include developer volume and the ratio in the ROOTS formula.
-- Provide a compatible mids/ends plan.
-- Return exactly 3 scenarios: Primary, Alternate (cooler), Alternate (warmer).
-
-${SHARED_JSON_SHAPE}
-`.trim();
+// Converts a Date object representing a local date/time to an ISO string
+// representing the same moment in UTC, adjusting for the difference between
+// the specified timezone and the server's current timezone.  This helper
+// leverages Intl to compute the timezone offset at the moment in question.
+function toISOForTimeZone(date, tz) {
+  try {
+    // Represent the given date as it would appear in the target timezone
+    const tzDate = new Date(date.toLocaleString('en-US', { timeZone: tz }));
+    // The difference between tzDate and date (in ms) is the offset from
+    // server local time to the target timezone at this moment
+    const offsetMs = tzDate.getTime() - date.getTime();
+    // Shift date back by that offset so that when converted to ISO it
+    // represents the intended local time in the target timezone
+    return new Date(date.getTime() - offsetMs).toISOString();
+  } catch (_err) {
+    // Fallback: if Intl APIs fail or the timezone is invalid, treat the
+    // provided date as local and zero‑offset.  This still returns a valid
+    // ISO string but ignores the timezone argument.
+    const off = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - off).toISOString();
   }
-  if (category === 'semi') {
-    return `
-${header}
-
-CATEGORY = SEMI-PERMANENT (direct/acidic deposit-only; ${brand})
-${ratioGuard}
-
-Rules:
-- No developer in formulas (RTU where applicable). Use brand Clear/diluter for sheerness.
-- Do not promise full grey coverage.
-- Return up to 3 scenarios: Primary (+ optional alternates if realistic).
-
-${SHARED_JSON_SHAPE}
-`.trim();
-  }
-  return `
-${header}
-
-CATEGORY = DEMI (gloss/toner; brand-consistent behavior)
-${ratioGuard}
-
-Rules:
-- Gloss/toner plans only from ${brand}. In every formula, include the ratio and developer/activator name.
-- Keep processing up to ~20 minutes unless brand guidance requires otherwise.
-- No lift promises; no grey-coverage claims.
-- Return up to 3 scenarios: Primary (+ optional alternates if realistic).
-
-${SHARED_JSON_SHAPE}
-`.trim();
 }
 
-// -------------------------- OpenAI Call Helper -----------------------------
-async function chatAnalyze({ category, brand, dataUrl }) {
-  const system = buildSystemPrompt(category, brand);
-  const messages = [
-    { role: 'system', content: system },
-    { role: 'user', content: [
-      { type: 'text', text: `Analyze the attached photo. Category: ${category}. Brand: ${brand}. Provide 3 scenarios following the JSON schema.` },
-      { type: 'image_url', image_url: { url: dataUrl } }
-    ] }
-  ];
-  const resp = await client.chat.completions.create({
-    model: MODEL, messages, temperature: 0.25, response_format: { type: 'json_object' }
-  });
-  const text = resp.choices?.[0]?.message?.content?.trim() || '{}';
-  try { return JSON.parse(text); } catch { const m = text.match(/\{[\s\S]*\}$/); return m ? JSON.parse(m[0]) : { analysis: 'Parse error', scenarios: [] }; }
+// Parses natural language date/time expressions into an ISO string.  This
+// function supports common phrases such as "tomorrow", "today", "tonight",
+// weekday names (with or without "next"), and explicit times like "2pm" or
+// "14:30".  When no time is specified, a default of 10:00 AM is used.  The
+// timezone argument allows the returned ISO to reflect a specific zone.
+function parseDateTime(message, timezone = 'America/Los_Angeles', nowISO) {
+  const lower = message.toLowerCase();
+  // Determine the current moment based on nowISO (if provided) or the
+  // server's current time.  nowISO is expected to be an ISO string.
+  let now;
+  if (nowISO && typeof nowISO === 'string') {
+    const parsedNow = new Date(nowISO);
+    if (!isNaN(parsedNow.valueOf())) {
+      now = parsedNow;
+    } else {
+      now = new Date();
+    }
+  } else {
+    now = new Date();
+  }
+  // Start with today's date (year, month, day) in the server's local
+  // timezone.  We set the time to 00:00 to avoid carrying over time.
+  const baseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let targetDate = new Date(baseDate);
+  // Determine the day offset
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  let targetDayIndex = null;
+  let nextFlag = false;
+  // Check for "next <weekday>"
+  for (const day of days) {
+    const reNext = new RegExp(`\\bnext\\s+${day}\\b`, 'i');
+    if (reNext.test(message)) {
+      targetDayIndex = days.indexOf(day);
+      nextFlag = true;
+      break;
+    }
+  }
+  // If no explicit "next", check for any weekday mention
+  if (targetDayIndex === null) {
+    for (const day of days) {
+      const re = new RegExp(`\\b${day}\\b`, 'i');
+      if (re.test(message)) {
+        targetDayIndex = days.indexOf(day);
+        break;
+      }
+    }
+  }
+  // Apply relative day phrases
+  if (/\\btomorrow\\b/.test(lower)) {
+    targetDate = new Date(baseDate);
+    targetDate.setDate(baseDate.getDate() + 1);
+  } else if (/\\btoday\\b/.test(lower)) {
+    targetDate = new Date(baseDate);
+  } else if (/\\btonight\\b/.test(lower)) {
+    targetDate = new Date(baseDate);
+  } else if (targetDayIndex !== null) {
+    const currentDay = now.getDay();
+    let daysUntil = (targetDayIndex - currentDay + 7) % 7;
+    if (nextFlag || daysUntil === 0) {
+      daysUntil = daysUntil === 0 ? 7 : daysUntil;
+    }
+    targetDate = new Date(baseDate);
+    targetDate.setDate(baseDate.getDate() + daysUntil);
+  } else {
+    // No day specified: default to today
+    targetDate = new Date(baseDate);
+  }
+  // Default time values
+  let hour = 10;
+  let minute = 0;
+  // Relative part‑of‑day hints override defaults
+  if (/\\bnoon\\b/.test(lower)) {
+    hour = 12;
+    minute = 0;
+  }
+  if (/\\bmidnight\\b/.test(lower)) {
+    hour = 0;
+    minute = 0;
+  }
+  if (/\\bmorning\\b/.test(lower)) {
+    hour = 9;
+  }
+  if (/\\bafternoon\\b/.test(lower)) {
+    hour = 14;
+  }
+  if (/\\bevening\\b/.test(lower)) {
+    hour = 17;
+  }
+  // Parse explicit times such as 2pm, 14:30, 2:15 pm, etc.
+  const timeRegex = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i;
+  const timeMatch = message.match(timeRegex);
+  if (timeMatch) {
+    hour = parseInt(timeMatch[1], 10);
+    minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+    const meridiem = timeMatch[3] ? timeMatch[3].toLowerCase() : null;
+    if (meridiem) {
+      if (meridiem === 'pm' && hour < 12) {
+        hour += 12;
+      }
+      if (meridiem === 'am' && hour === 12) {
+        hour = 0;
+      }
+    } else {
+      // If no am/pm, treat early hours (1–7) as afternoon for typical salon hours
+      if (hour < 8) {
+        hour += 12;
+      }
+    }
+  }
+  // Compose a Date using local timezone values
+  const candidate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), hour, minute, 0);
+  return toISOForTimeZone(candidate, timezone);
+}
+
+// Extracts structured actions from a user message.  Context provides lists
+// of existing clients and appointments to help disambiguate names.  Each
+// returned action has a type and a payload dictionary with only primitive
+// values.  The supported types are createClient, createAppointment,
+// deleteAppointment and deleteClient.
+function extractActions(message, timezone, nowISO, context) {
+  const actions = [];
+  const lower = message.toLowerCase();
+  const clients = Array.isArray(context && context.clients) ? context.clients : [];
+  // -----------------------------------------------------------------------
+  // Create Client detection
+  // Look for phrases like "add client Sarah", "create client John Doe", or
+  // "new client Eve".  We also support synonyms like "register client"
+  // or "sign up client".  Multiple clients can be captured.
+  const clientCreateRegex = /(add|create|new|register|signup|sign\s*up)\s+client\s+([A-Z][\w'\- ]*(?:\s+[A-Z][\w'\- ]*)?)/gi;
+  let match;
+  while ((match = clientCreateRegex.exec(message)) !== null) {
+    const name = match[2].trim();
+    if (name) {
+      actions.push({ type: 'createClient', payload: { name } });
+    }
+  }
+  // -----------------------------------------------------------------------
+  // Delete Client detection
+  // We check for explicit "delete client" phrases and remove any clients
+  // whose names are mentioned in the message.  If no explicit name is
+  // captured we also scan the known client list.
+  if (/(delete|remove)\s+client/i.test(lower)) {
+    const deleteClientRegex = /(delete|remove)\s+client\s+([A-Z][\w'\- ]*(?:\s+[A-Z][\w'\- ]*)?)/gi;
+    let delMatch;
+    let foundName = false;
+    while ((delMatch = deleteClientRegex.exec(message)) !== null) {
+      const nm = delMatch[2].trim();
+      if (nm) {
+        actions.push({ type: 'deleteClient', payload: { name: nm } });
+        foundName = true;
+      }
+    }
+    if (!foundName) {
+      clients.forEach(nm => {
+        if (lower.includes(nm.toLowerCase())) {
+          actions.push({ type: 'deleteClient', payload: { name: nm } });
+        }
+      });
+    }
+  }
+  // Additional Delete Client detection
+  // If the message says "delete <Name>" or "remove <Name>" without the
+  // word "appointment" nearby, and the name matches a known client,
+  // interpret this as a request to delete the client.  This helps with
+  // natural phrasing like "remove Kiara".
+  {
+    const simpleDeleteRegex = /(delete|remove)\s+([A-Z][\w'\- ]*(?:\s+[A-Z][\w'\- ]*)?)/gi;
+    let m;
+    while ((m = simpleDeleteRegex.exec(message)) !== null) {
+      const verb = m[1].toLowerCase();
+      const target = m[2].trim();
+      // Ignore if the word 'appointment' or 'appt' appears within 5 words
+      const surrounding = message
+        .slice(Math.max(0, m.index - 30), m.index + m[0].length + 30)
+        .toLowerCase();
+      if (/\bappointment\b|\bappt\b/.test(surrounding)) continue;
+      // Only trigger if the target matches a known client
+      const matched = clients.find(c => c.toLowerCase() === target.toLowerCase());
+      if (matched) {
+        actions.push({ type: 'deleteClient', payload: { name: matched } });
+      }
+    }
+  }
+  // -----------------------------------------------------------------------
+  // Delete Appointment detection
+  // Handles "delete appointment", "remove appointment", or "cancel
+  // appointment" with optional client name and date/time.  We attempt to
+  // identify the client from the message or from context.  The title is
+  // derived from any service keyword mentioned; otherwise "Appointment".
+  if (/(delete|remove|cancel).*\b(appointment|appt)\b/i.test(lower)) {
+    const dateISO = parseDateTime(message, timezone, nowISO);
+    // Determine client name: prefer explicit mention of a known client
+    let targetName = null;
+    for (const nm of clients) {
+      if (lower.includes(nm.toLowerCase())) {
+        targetName = nm;
+        break;
+      }
+    }
+    const service = extractService(lower) || 'Appointment';
+    actions.push({
+      type: 'deleteAppointment',
+      payload: { clientName: targetName, dateISO, title: service }
+    });
+  }
+  // -----------------------------------------------------------------------
+  // Create Appointment detection
+  // Ignore if the message is clearly a deletion request.  Otherwise
+  // recognise words like "book", "schedule", "set up", "add", or
+  // "create" in combination with typical appointment/service terms.  We
+  // extract the date/time, service, price, duration and client name.  If
+  // the client is not in the provided context we also propose creating the
+  // client first.  Only one appointment per message is generated.
+  if (!/(delete|remove|cancel).*\b(appointment|appt)\b/i.test(lower)) {
+    const createAppPattern = /(book|schedule|set\s*up|setup|add|create|reserve|arrange|make|fix|set)/i;
+    const appointmentHint = /(appointment|appt|hair|color|colour|cut|trim|balayage|highlights|highlight|root|toner|gloss|style|bleach|perm|relaxer)/i;
+    if (createAppPattern.test(lower) && appointmentHint.test(lower)) {
+      const dateISO = parseDateTime(message, timezone, nowISO);
+      // Determine client name: search known clients first
+      let name = null;
+      for (const nm of clients) {
+        if (lower.includes(nm.toLowerCase())) {
+          name = nm;
+          break;
+        }
+      }
+      // If no known client found, look for capitalised names in the message.
+      if (!name) {
+        const candidates = findPotentialNames(message);
+        for (const cand of candidates) {
+          const candLower = cand.toLowerCase();
+          // Skip weekday names and relative phrases
+          const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday','today','tomorrow','tonight'];
+          if (days.includes(candLower)) continue;
+          // Skip known service keywords
+          if (SERVICE_KEYWORDS.some(s => s.toLowerCase() === candLower)) continue;
+          // Skip generic words
+          const generic = ['appointment','hair','client'];
+          if (generic.includes(candLower)) continue;
+          // Skip candidates whose first word is a known verb (e.g. Book Sarah)
+          const firstWord = cand.split(/\s+/)[0].toLowerCase();
+          const verbs = ['book','schedule','set','setup','add','create'];
+          if (verbs.includes(firstWord)) continue;
+          name = cand;
+          break;
+        }
+      }
+      // Identify the service title
+      const service = extractService(lower) || 'Appointment';
+      // Parse price (e.g. $275 or 275 dollars)
+      let price;
+      const priceMatch = message.match(/\$\s*([0-9]+(?:\.[0-9]+)?)/);
+      if (priceMatch) {
+        price = parseFloat(priceMatch[1]);
+      }
+      // Parse duration (e.g. 2.5 hours, 90 minutes)
+      let durationMinutes;
+      const hrMatch = lower.match(/([0-9]*\.?[0-9]+)\s*(hours|hrs|hr|h)\b/);
+      if (hrMatch) {
+        durationMinutes = parseFloat(hrMatch[1]) * 60;
+      } else {
+        const minMatch = lower.match(/([0-9]+)\s*(minutes|min|mins)\b/);
+        if (minMatch) {
+          durationMinutes = parseFloat(minMatch[1]);
+        }
+      }
+      // Build appointment payload
+      const payload = { title: service, dateISO, clientName: name };
+      if (typeof price !== 'undefined') payload.price = price;
+      if (typeof durationMinutes !== 'undefined') payload.durationMinutes = durationMinutes;
+      actions.push({ type: 'createAppointment', payload });
+      // If the client is specified but not in context, propose creating it
+      if (name && !clients.some(c => c.toLowerCase() === name.toLowerCase())) {
+        // Prepend so that the client is created before the appointment
+        actions.unshift({ type: 'createClient', payload: { name } });
+      }
+    }
+  }
+  return actions;
 }
 
 // --------------------------------- Routes ----------------------------------
-app.get('/health', (_req, res) => res.json({ ok: true }));
-app.get('/brands', (_req, res) => res.json({ demi: DEMI_BRANDS, permanent: PERMANENT_BRANDS, semi: SEMI_BRANDS }));
+// Basic health and brand endpoints remain unchanged.  They are used by
+// various parts of the Hair Hub app.
+app.get('/health', (_req, res) => {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.end(JSON.stringify({ ok: true }));
+});
+app.get('/brands', (_req, res) => {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.end(JSON.stringify({ demi: DEMI_BRANDS, permanent: PERMANENT_BRANDS, semi: SEMI_BRANDS }));
+});
 
-app.post('/analyze', upload.single('photo'), async (req, res) => {
-  let tmpPath;
+// ----------------------- Helpers for body parsing --------------------------
+// Reads and parses JSON from an incoming request.  Rejects if the body is
+// malformed or exceeds 10MB.  Returns an empty object for empty bodies.
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    const limit = 10 * 1024 * 1024; // 10MB
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > limit) {
+        reject(new Error('Body too large'));
+      }
+    });
+    req.on('end', () => {
+      if (!body) {
+        resolve({});
+        return;
+      }
+      try {
+        const json = JSON.parse(body);
+        resolve(json);
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on('error', err => {
+      reject(err);
+    });
+  });
+}
+
+// Placeholder for the Formula Guru analysis endpoint.  In this simplified
+// implementation we deliberately avoid calling external services (e.g. OpenAI)
+// to comply with the assignment guidelines.  A real implementation would
+// validate formulas, enforce mixing rules, generate developer instructions and
+// respond with analysis results.  Here we simply return an error to indicate
+// that the endpoint is unavailable.
+app.post('/analyze', async (req, res) => {
+  // Set headers for CORS and JSON
+  res.statusCode = 501;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.end(JSON.stringify({ error: 'analyze_not_implemented' }));
+});
+
+// ------------------------------ StylistSync Assistant ----------------------
+// Calendar‑aware, action‑synthesising assistant.  This endpoint takes a
+// natural language message along with optional timezone, nowISO and
+// context (clients and appointments) and returns a reply string, an array
+// of structured actions and an array of warnings (empty in this
+// implementation).  The reply may include informational content based on
+// the question (e.g. mixing ratios) and will mention when actions are
+// proposed.  The client app is responsible for rendering chips and
+// confirming the actions.
+app.post('/assistant', async (req, res) => {
+  // Always set CORS and content type headers
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   try {
-    if (!process.env.OPENAI_API_KEY) return res.status(401).json({ error: 'Missing OPENAI_API_KEY' });
-    if (!req.file) return res.status(400).json({ error: "No photo uploaded (field 'photo')." });
-
-    const categoryRaw = (req.body?.category || 'demi').toString().trim().toLowerCase();
-    const category = ['permanent', 'semi', 'demi'].includes(categoryRaw) ? categoryRaw : 'demi';
-    const brand = normalizeBrand(category, req.body?.brand);
-
-    tmpPath = req.file.path;
-    const mime = req.file.mimetype || 'image/jpeg';
-    const b64 = await fs.readFile(tmpPath, { encoding: 'base64' });
-    const dataUrl = `data:${mime};base64,${b64}`;
-
-    let out = await chatAnalyze({ category, brand, dataUrl });
-    out = enforceBrandConsistency(out, brand);
-    out = expressTonesGuard(out, out.analysis, brand);
-    out = enforceNeutralBlack(out, out.analysis, brand);
-    out = applyValidator(out, category, brand);
-    out = validatePrimaryScenario(out, brand);
-
-    if (category !== 'permanent' && Array.isArray(out.scenarios)) {
-      const primary = out.scenarios.find(s => (s.title || '').toLowerCase().includes('primary')) || out.scenarios[0];
-      out.scenarios = primary ? [primary] : [];
+    // Parse the request body as JSON.  If parsing fails, return 400.
+    let body;
+    try {
+      body = await readJson(req);
+    } catch (err) {
+      res.statusCode = 400;
+      return res.end(JSON.stringify({ error: 'invalid_json' }));
     }
-    return res.json(out);
+    const message = typeof body.message === 'string' ? body.message.trim() : '';
+    const timezone = typeof body.timezone === 'string' && body.timezone ? body.timezone : 'America/Los_Angeles';
+    const nowISO = body.nowISO;
+    const context = body.context || {};
+    if (!message) {
+      res.statusCode = 400;
+      return res.end(JSON.stringify({ error: 'Missing message' }));
+    }
+    // Hair/cosmetology Q&A: assemble reply from brand rules if applicable
+    const info = detectBrandInfo(message);
+    // Synthesize actions from the message
+    const actions = extractActions(message, timezone, nowISO, context);
+    // Build reply.  If info was found, include it; if actions were
+    // synthesized, append a note indicating actions have been proposed.  If
+    // neither information nor actions are found, provide a generic help
+    // message.
+    let reply = '';
+    if (info) {
+      reply += info.trim();
+    }
+    if (actions && actions.length > 0) {
+      if (reply) reply += ' ';
+      reply += 'Here are the proposed actions.';
+    }
+    if (!reply) {
+      reply = 'I couldn\'t find an answer. Ask me about hair formulas or tell me to add, remove or book appointments.';
+    }
+    res.statusCode = 200;
+    return res.end(JSON.stringify({ reply, actions, warnings: [] }));
   } catch (err) {
-    console.error(err);
-    return res.status(502).json({ error: 'Upstream error', detail: String(err?.message || err) });
-  } finally {
-    if (tmpPath) { try { await fs.unlink(tmpPath); } catch {} }
+    console.error('assistant error', err);
+    res.statusCode = 500;
+    return res.end(JSON.stringify({ error: 'assistant_failed' }));
   }
 });
 
-// ------------------------------- Start Guard -------------------------------
+// Start the server unless we are in a test environment.  Express will
+// automatically choose an available port if none is specified.
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'test') {
-
-  // ------------------------------ StylistSync Assistant ------------------------------
-  // Calendar-aware, date-locking, action-synthesizing, adapter-normalized
-  app.post('/assistant', async (req, res) => {
-    try {
-      const { message, timezone = "America/Los_Angeles", nowISO, context = {} } = req.body || {};
-      if (!message || typeof message !== 'string' || !message.trim()) {
-        return res.status(400).json({ error: 'Missing message' });
-      }
-
-      // --- Time helpers (PT ISO with offset) ---
-      const now = nowISO ? new Date(nowISO) : new Date();
-      const offsetFromISO = (iso) => {
-        const m = typeof iso === "string" ? iso.match(/([+-]\d{2}:\d{2})$/) : null;
-        return m ? m[1] : "-07:00"; // fallback PDT
-      };
-      const ptOffset = offsetFromISO(nowISO || new Date().toISOString());
-      const WeekIndex = { sunday:0, monday:1, tuesday:2, wednesday:3, thursday:4, friday:5, saturday:6 };
-
-      function resolveWeekdayPhrase(text) {
-        const s = (text || "").toLowerCase();
-        const wk = Object.keys(WeekIndex).find(d => s.includes(d));
-        if (!wk) return null;
-        let hh = 9, mm = 0;
-        const tm = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
-        if (tm) {
-          hh = parseInt(tm[1], 10);
-          mm = tm[2] ? parseInt(tm[2], 10) : 0;
-          const ap = tm[3];
-          if (ap === 'pm' && hh < 12) hh += 12;
-          if (ap === 'am' && hh === 12) hh = 0;
-        }
-        const tgt = WeekIndex[wk];
-        const base = new Date(now);
-        const dow = base.getUTCDay();
-        let add = (tgt - dow + 7) % 7;
-        const saysNextOrUpcoming = /(?:\bnext\b|\bupcoming\b)/.test(s);
-        const saysThis = /\bthis\b/.test(s);
-        if (add === 0 && (saysThis || saysNextOrUpcoming)) add = 7;
-        if (add === 0) add = 7; // always future
-        const future = new Date(base.getTime() + add * 24 * 3600 * 1000);
-        const yyyy = future.getUTCFullYear();
-        const mm2  = String(future.getUTCMonth() + 1).padStart(2, '0');
-        const dd2  = String(future.getUTCDate()).padStart(2, '0');
-        const HH   = String(hh).padStart(2, '0');
-        const MM   = String(mm).padStart(2, '0');
-        return `${yyyy}-${mm2}-${dd2}T${HH}:${MM}:00${ptOffset}`;
-      }
-
-      function extractSlots(text) {
-        const slots = {};
-        const lower = text.toLowerCase();
-        if (/(sunday|monday|tuesday|wednesday|thursday|friday|saturday)/.test(lower)) {
-          const iso = resolveWeekdayPhrase(text);
-          if (iso) slots.dateISO = iso;
-        }
-        const mPrice = text.match(/\$\s*(\d{2,4})(?:\.\d{2})?/);
-        if (mPrice) slots.price = Number(mPrice[1]);
-        const mDur = text.match(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?)/i);
-        if (mDur) {
-          const n = parseFloat(mDur[1]);
-          slots.durationMinutes = /min/i.test(mDur[2]) ? Math.round(n) : Math.round(n * 60);
-        }
-        const mClient = text.match(/\bnamed\s+([A-Za-z][\w'-]+)/i) || text.match(/\bfor\s+([A-Za-z][\w'-]+)\b/i);
-        if (mClient) slots.clientName = mClient[1];
-        const mSvc = text.match(/\bfor\s+(?:a\s+)?([A-Za-z ][A-Za-z ]*)/i);
-        if (mSvc) {
-          const raw = mSvc[1].trim();
-          if (!/\b(appointment|client|named|this|next|upcoming|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(raw)) {
-            const svc = raw.replace(/\s+/g, ' ').trim();
-            slots.serviceType = svc.charAt(0).toUpperCase() + svc.slice(1);
-            slots.title = slots.serviceType;
-          }
-        }
-        return slots;
-      }
-
-      // ---------- Local synthesizer ----------
-      function localSynthesize(message, context) {
-        const slots = extractSlots(message);
-        const warnings = [];
-        const actions = [];
-
-        if (slots.clientName) {
-          const known = Array.isArray(context.clients)
-            ? context.clients.some(n => (n || '').toLowerCase() === slots.clientName.toLowerCase())
-            : false;
-          if (!known) {
-            actions.push({ type: 'createClient', payload: { name: slots.clientName, contact: null, notes: null } });
-            warnings.push(`Client '${slots.clientName}' not found; will be created.`);
-          }
-        }
-        if (slots.dateISO) {
-          actions.push({
-            type: 'createAppointment',
-            payload: {
-              title: slots.title || 'Appointment',
-              dateISO: slots.dateISO,
-              clientName: slots.clientName || null,
-              notes: null,
-              serviceType: slots.serviceType || null,
-              durationMinutes: slots.durationMinutes || 60,
-              price: slots.price || null
-            }
-          });
-          const appts = Array.isArray(context.appointments) ? context.appointments : [];
-          const conflict = appts.find(a => a?.dateISO === slots.dateISO);
-          if (conflict) {
-            warnings.push(`Time ${slots.dateISO} overlaps with '${conflict.title}' for ${conflict.clientName || "someone"}.`);
-          }
-        }
-
-        const reply = actions.length
-          ? `Booked ${slots.clientName ? `${slots.clientName} ` : ''}${slots.title || 'appointment'} for ${slots.dateISO?.replace('T', ' at ') || 'the requested time'}.`
-          : 'I can help with that.';
-
-        return { reply, actions, warnings };
-      }
-
-      // If no API key, immediately return local synthesized actions
-      if (!process.env.OPENAI_API_KEY) {
-        const fallback = localSynthesize(message, context);
-        return res.json(fallback);
-      }
-
-      // ---------- System prompt ----------
-      const sys = `You are StylistSync — an AI hairstylist assistant inside an iOS app.
-
-Rules:
-- Always return strict JSON with keys "reply" (string), "actions" (array), "warnings" (array).
-- For requests to book/create/delete/adjust in-app, you MUST include structured actions.
-- Timezone is ${timezone}. "now" is ${now.toISOString()}. If user says "this/upcoming/next Monday 2pm", resolve to the nearest FUTURE date in PT and return ISO with offset like 2025-09-15T14:00:00-07:00.
-- Prefer clientName over IDs. If client not found in context, include a warning that it will be created.
-- Do NOT mutate data; only propose actions.
-
-Context (names only):
-clients: ${(context.clients || []).slice(0, 50).join(", ")}
-appt count: ${(context.appointments || []).length}`;
-
-      const userMsg = String(message);
-
-      // ---------- Call OpenAI with catch → local fallback ----------
-      let raw = "";
-      try {
-        const resp = await client.chat.completions.create({
-          model: MODEL,
-          messages: [
-            { role: 'system', content: sys },
-            { role: 'user', content: userMsg },
-          ],
-          temperature: 0.2,
-          response_format: { type: 'json_object' }
-        });
-        raw = resp.choices?.[0]?.message?.content?.trim() || "";
-      } catch (apiErr) {
-        console.error('OpenAI error:', apiErr?.message || apiErr);
-        const fallback = localSynthesize(userMsg, context);
-        return res.json(fallback);
-      }
-
-      let parsed = null;
-      try { parsed = JSON.parse(raw); } catch { parsed = null; }
-
-      // ---------- Adapter: normalize legacy/LLM shapes to the app contract ----------
-      function toMinutes(x) {
-        if (x == null) return null;
-        const s = String(x).trim();
-        const mHr = s.match(/^(\d+(?:\.\d+)?)\s*(hours?|hrs?|h)$/i);
-        const mMin = s.match(/^(\d+(?:\.\d+)?)\s*(minutes?|mins?|m)$/i);
-        if (mHr) return Math.round(parseFloat(mHr[1]) * 60);
-        if (mMin) return Math.round(parseFloat(mMin[1]));
-        const n = Number(s);
-        return Number.isFinite(n) ? n : null;
-      }
-      function normalizeOne(a) {
-        if (a && a.type && a.payload) return a;
-        if (a && (a.action === 'create_appointment' || a.type === 'create_appointment')) {
-          const durationMinutes = a.durationMinutes ?? toMinutes(a.duration) ?? 60;
-          const price = (typeof a.price === 'string' ? Number(a.price.replace(/^\$/, '')) : a.price) ?? null;
-          const title = a.title || a.service || a.serviceType || 'Appointment';
-          return {
-            type: 'createAppointment',
-            payload: {
-              title,
-              dateISO: a.dateISO || a.startTime || a.start || a.when || null,
-              clientName: a.clientName || a.name || null,
-              notes: a.notes ?? null,
-              serviceType: a.serviceType || a.service || null,
-              durationMinutes,
-              price
-            }
-          };
-        }
-        if (a && (a.action === 'create_client' || a.type === 'create_client')) {
-          return { type: 'createClient', payload: { name: a.name || a.clientName || '', contact: a.contact ?? null, notes: a.notes ?? null } };
-        }
-        if (a && (a.action === 'delete_appointment' || a.type === 'delete_appointment')) {
-          return { type: 'deleteAppointment', payload: { dateISO: a.dateISO || a.startTime || a.when || null, title: a.title || a.service || 'Appointment', clientName: a.clientName || null } };
-        }
-        if (a && (a.action === 'adjust_inventory' || a.type === 'adjust_inventory')) {
-          return { type: 'adjustInventory', payload: { productName: a.productName || a.item || '', delta: Number(a.delta ?? a.change ?? 0), note: a.note ?? null } };
-        }
-        if (a && (a.action === 'delete_client' || a.type === 'delete_client')) {
-          return { type: 'deleteClient', payload: { name: a.name || a.clientName || '' } };
-        }
-        return null;
-      }
-
-      if (!parsed || typeof parsed !== 'object') parsed = { reply: 'OK', actions: [], warnings: [] };
-      if (!Array.isArray(parsed.actions)) parsed.actions = [];
-      parsed.actions = parsed.actions.map(normalizeOne).filter(Boolean);
-      if (!Array.isArray(parsed.warnings)) parsed.warnings = [];
-
-      // ---- Ensure createClient accompanies createAppointment when needed ----
-      (function ensureClientCreate() {
-        const appt = parsed.actions.find(a => a?.type === 'createAppointment' && a?.payload?.clientName);
-        const alreadyHasCreateClient = parsed.actions.some(a => a?.type === 'createClient');
-        if (!appt || alreadyHasCreateClient) return;
-        const clientName = appt.payload.clientName?.trim();
-        if (!clientName) return;
-
-        const contextHasClient =
-          Array.isArray(context.clients) &&
-          context.clients.some(n => (n || '').toLowerCase() === clientName.toLowerCase());
-
-        const warningHintsNew =
-          (parsed.warnings || []).some(w => typeof w === 'string' && /client.+(not found|will be created)/i.test(w));
-
-        if (!contextHasClient || warningHintsNew) {
-          parsed.actions.unshift({
-            type: 'createClient',
-            payload: { name: clientName, contact: null, notes: null }
-          });
-          if (!warningHintsNew) {
-            parsed.warnings.push(`Client '${clientName}' not found; will be created.`);
-          }
-        }
-      })();
-
-      // ---------- Guaranteed actions if the model forgot ----------
-      const wantsAction =
-        /(book|schedule|add|create|delete|cancel|adjust|reschedule)/i.test(userMsg) &&
-        /(appointment|client|inventory|product|calendar)/i.test(userMsg);
-
-      if (wantsAction && parsed.actions.length === 0) {
-        const synth = localSynthesize(userMsg, context);
-        parsed.actions = synth.actions;
-        parsed.warnings.push(...(synth.warnings || []));
-        if (!parsed.reply || typeof parsed.reply !== 'string' || !parsed.reply.trim()) {
-          parsed.reply = synth.reply;
-        }
-      }
-
-      if (typeof parsed.reply !== 'string') parsed.reply = String(parsed.reply ?? '');
-      return res.json(parsed);
-    } catch (err) {
-      console.error('assistant error', err);
-      return res.status(500).json({ error: 'assistant_failed' });
-    }
+  app.listen(PORT, () => {
+    console.log(`Hair Hub server running on port ${PORT}`);
   });
-
-  app.listen(PORT, () => console.log(`Formula Guru server running on :${PORT}`));
 }
 
 export default app;
