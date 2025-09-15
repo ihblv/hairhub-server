@@ -1,100 +1,28 @@
 // server.mjs — StylistSync Assistant & Formula Guru API
 // ------------------------------------------------------------------
-// This server exposes a few endpoints to power the Hair Hub application.
+// This file implements a small HTTP server that serves as the backend
+// for the Hair Hub app.  It exposes a few endpoints:
 //
-//  - /health: basic health check
-//  - /brands: exposes demi/permanent/semi brands used by Formula Guru
-//  - /analyze: placeholder for the Formula Guru analysis endpoint (left intact)
-//  - /assistant: lightweight natural‑language assistant for hair Q&A and
-//    scheduling.  This endpoint parses user messages to answer hair and
-//    cosmetology questions based on built‑in brand rules and synthesises
-//    structured actions (createClient, createAppointment, deleteAppointment,
-//    deleteClient) from natural language.  Returned actions are used by the
-//    client app to display interactive chips.  Date/time phrases like
-//    “next Friday 2pm” are resolved into ISO strings using the provided
-//    timezone.
+//  - GET  /health    — basic health check
+//  - GET  /brands    — returns arrays of demi, permanent and semi brands
+//  - POST /analyze   — placeholder; returns 501 because Formula Guru analysis
+//                      is not implemented in this assignment
+//  - POST /assistant — answers hair/cosmetology questions and synthesises
+//                      structured actions (createClient, createAppointment,
+//                      deleteAppointment, deleteClient) from natural language.
+//
+// The server uses Node's built‑in http module and a tiny router to avoid
+// external dependencies like Express.  It keeps the brand catalogs and
+// mixing rules intact.  Parsing of natural language for appointments is
+// permissive and supports relative day phrases (today, tomorrow, next Friday),
+// simple time expressions (2pm, 14:00) and common service keywords.
 
-// Load environment variables from a .env file if present.  We wrap this
-// require in a try/catch because the dotenv package may not be installed in
-// all environments.  If it fails to load, we silently continue.
-try {
-  await import('dotenv/config');
-} catch (_err) {
-  // no‑op
-}
 import http from 'http';
 import { URL } from 'url';
 
-// A tiny routing layer that mimics a subset of the Express API.  It
-// supports registering handlers for GET and POST requests and starting an
-// HTTP server.  Each handler receives the raw Node.js req/res objects.
-class MiniApp {
-  constructor() {
-    this.routes = [];
-    this.server = null;
-  }
-  /**
-   * Register a GET handler for a specific path.
-   * @param {string} path
-   * @param {(req: IncomingMessage, res: ServerResponse) => void} handler
-   */
-  get(path, handler) {
-    this.routes.push({ method: 'GET', path, handler });
-  }
-  /**
-   * Register a POST handler for a specific path.
-   * @param {string} path
-   * @param {(req: IncomingMessage, res: ServerResponse) => void} handler
-   */
-  post(path, handler) {
-    this.routes.push({ method: 'POST', path, handler });
-  }
-  /**
-   * Internal request dispatcher.  Matches routes by exact method and path.
-   */
-  async handle(req, res) {
-    const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    const { pathname } = parsed;
-    for (const route of this.routes) {
-      if (route.method === req.method && route.path === pathname) {
-        return route.handler(req, res);
-      }
-    }
-    // Default 404 response with CORS header
-    res.statusCode = 404;
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.end(JSON.stringify({ error: 'not_found' }));
-  }
-  /**
-   * Start the HTTP server.  Handles CORS preflight and dispatches
-   * registered route handlers.
-   */
-  listen(port, callback) {
-    this.server = http.createServer((req, res) => {
-      // Handle CORS preflight
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204, {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        });
-        return res.end();
-      }
-      this.handle(req, res);
-    });
-    this.server.listen(port, callback);
-  }
-}
-
-const app = new MiniApp();
-
 // ----------------------------- Brand Catalogs ------------------------------
-// These brand lists and rules are used by the Formula Guru tab as well as
-// referenced by the assistant for Q&A.  Do not alter the contents of these
-// arrays or objects; they reflect manufacturer mixing instructions and
-// classification.
-
+// These lists are used by the Formula Guru UI and for hair Q&A.  Do not
+// modify them; they reflect manufacturer product lines.
 const DEMI_BRANDS = [
   'Redken Shades EQ',
   'Wella Color Touch',
@@ -124,10 +52,10 @@ const SEMI_BRANDS = [
   'Matrix SoColor Cult',
 ];
 
-// Detailed mixing rules keyed by brand name.  Each entry has a category
-// (permanent/demi/semi), a recommended ratio, an appropriate developer and
-// additional notes.  These rules are surfaced to the assistant when
-// answering questions about specific brands.
+// Detailed manufacturer mixing rules keyed by brand name.  Each entry has a
+// category (permanent/demi/semi), a recommended ratio, an appropriate
+// developer and additional notes.  These rules are surfaced to the assistant
+// when answering questions about specific brands.
 const BRAND_RULES = {
   // PERMANENT
   'Redken Color Gels Lacquers': {
@@ -178,7 +106,6 @@ const BRAND_RULES = {
     developer: 'PRAVANA Crème Developer 10/20/30/40 vol',
     notes: 'ChromaSilk 1:1.5 (High Lifts 1:2).'
   },
-
   // DEMI (deposit‑only)
   'Redken Shades EQ': {
     category: 'demi',
@@ -222,34 +149,30 @@ const BRAND_RULES = {
     developer: 'PRAVANA Zero Lift Creme Developer',
     notes: '**5 minutes only; watch visually. Use shade names (Violet, Platinum, Ash, Beige, Gold, Copper, Rose, Silver, Natural, Clear). Do NOT use level codes.**'
   },
-
   // SEMI (direct / RTU)
-  'Wella Color Fresh': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Ready‑to‑use acidic semi.' },
+  'Wella Color Fresh': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Ready‑to-use acidic semi.' },
   'Goldwell Elumen': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Use Elumen Prepare/Lock support; no developer.' },
   'Pravana ChromaSilk Vivids': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Direct dye; dilute with Clear if needed.' },
   'Schwarzkopf Chroma ID': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Direct dye; dilute with Clear Bonding Mask.' },
   'Matrix SoColor Cult': { category: 'semi', ratio: 'RTU', developer: 'None', notes: 'Direct dye (no developer).' },
 };
 
-// ------------------------------ Hair Service Keywords ----------------------
+// ------------------------------ Service Keywords ---------------------------
 // When constructing appointments from natural language, we scan for any of
 // these substrings to infer the title/service type.  Ordering matters: longer
 // phrases should appear before shorter ones to avoid premature matches.
 const SERVICE_KEYWORDS = [
   'root touch up', 'root touch‑up', 'root touchup',
-  'conditioning treatment', 'balayage', 'highlights', 'highlight', 'blowout',
-  'extensions', 'treatment', 'consultation', 'retouch', 'colour', 'color',
-  'toner', 'gloss', 'bleach', 'perm', 'relaxer', 'trim', 'cut', 'style',
-  'ombré', 'ombre', 'bangs', 'foils'
+  'conditioning treatment', 'balayage', 'highlights', 'highlight',
+  'blowout', 'extensions', 'treatment', 'consultation', 'retouch',
+  'colour', 'color', 'toner', 'gloss', 'bleach', 'perm', 'relaxer',
+  'trim', 'cut', 'style', 'ombré', 'ombre', 'bangs', 'foils'
 ];
 
 // Helper to convert a keyword to Title Case.  For example "root touch up"
 // becomes "Root Touch Up" for chip labels.
 function titleCase(str) {
-  return str
-    .split(/\s+/)
-    .map(w => w.length ? w.charAt(0).toUpperCase() + w.slice(1) : '')
-    .join(' ');
+  return str.split(/\s+/).map(w => w.length ? w.charAt(0).toUpperCase() + w.slice(1) : '').join(' ');
 }
 
 // Returns a human‑readable description of mixing instructions for any brands
@@ -278,14 +201,11 @@ function detectBrandInfo(message) {
 function findPotentialNames(message) {
   const results = [];
   if (!message || typeof message !== 'string') return results;
-  // Split the message on whitespace to inspect individual tokens.  Stripping
-  // punctuation helps avoid trailing commas or periods in names.
   const tokens = message.split(/\s+/).filter(t => t.length > 0);
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i].replace(/[.,!?]/g, '');
     if (/^[A-Z]/.test(token)) {
       let candidate = token;
-      // Look ahead to see if the next token also starts with a capital letter
       const next = tokens[i + 1] ? tokens[i + 1].replace(/[.,!?]/g, '') : null;
       if (next && /^[A-Z]/.test(next)) {
         candidate = `${candidate} ${next}`;
@@ -313,18 +233,10 @@ function extractService(messageLower) {
 // leverages Intl to compute the timezone offset at the moment in question.
 function toISOForTimeZone(date, tz) {
   try {
-    // Represent the given date as it would appear in the target timezone
     const tzDate = new Date(date.toLocaleString('en-US', { timeZone: tz }));
-    // The difference between tzDate and date (in ms) is the offset from
-    // server local time to the target timezone at this moment
     const offsetMs = tzDate.getTime() - date.getTime();
-    // Shift date back by that offset so that when converted to ISO it
-    // represents the intended local time in the target timezone
     return new Date(date.getTime() - offsetMs).toISOString();
   } catch (_err) {
-    // Fallback: if Intl APIs fail or the timezone is invalid, treat the
-    // provided date as local and zero‑offset.  This still returns a valid
-    // ISO string but ignores the timezone argument.
     const off = date.getTimezoneOffset() * 60000;
     return new Date(date.getTime() - off).toISOString();
   }
@@ -337,28 +249,18 @@ function toISOForTimeZone(date, tz) {
 // timezone argument allows the returned ISO to reflect a specific zone.
 function parseDateTime(message, timezone = 'America/Los_Angeles', nowISO) {
   const lower = message.toLowerCase();
-  // Determine the current moment based on nowISO (if provided) or the
-  // server's current time.  nowISO is expected to be an ISO string.
   let now;
   if (nowISO && typeof nowISO === 'string') {
     const parsedNow = new Date(nowISO);
-    if (!isNaN(parsedNow.valueOf())) {
-      now = parsedNow;
-    } else {
-      now = new Date();
-    }
+    now = isNaN(parsedNow.valueOf()) ? new Date() : parsedNow;
   } else {
     now = new Date();
   }
-  // Start with today's date (year, month, day) in the server's local
-  // timezone.  We set the time to 00:00 to avoid carrying over time.
   const baseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   let targetDate = new Date(baseDate);
-  // Determine the day offset
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   let targetDayIndex = null;
   let nextFlag = false;
-  // Check for "next <weekday>"
   for (const day of days) {
     const reNext = new RegExp(`\\bnext\\s+${day}\\b`, 'i');
     if (reNext.test(message)) {
@@ -367,7 +269,6 @@ function parseDateTime(message, timezone = 'America/Los_Angeles', nowISO) {
       break;
     }
   }
-  // If no explicit "next", check for any weekday mention
   if (targetDayIndex === null) {
     for (const day of days) {
       const re = new RegExp(`\\b${day}\\b`, 'i');
@@ -377,7 +278,6 @@ function parseDateTime(message, timezone = 'America/Los_Angeles', nowISO) {
       }
     }
   }
-  // Apply relative day phrases
   if (/\\btomorrow\\b/.test(lower)) {
     targetDate = new Date(baseDate);
     targetDate.setDate(baseDate.getDate() + 1);
@@ -394,61 +294,33 @@ function parseDateTime(message, timezone = 'America/Los_Angeles', nowISO) {
     targetDate = new Date(baseDate);
     targetDate.setDate(baseDate.getDate() + daysUntil);
   } else {
-    // No day specified: default to today
     targetDate = new Date(baseDate);
   }
-  // Default time values
-  let hour = 10;
-  let minute = 0;
-  // Relative part‑of‑day hints override defaults
-  if (/\\bnoon\\b/.test(lower)) {
-    hour = 12;
-    minute = 0;
+  let hours = 10;
+  let minutes = 0;
+  const time12 = message.match(/\\b([0-9]{1,2})(?:[:.]([0-9]{2}))?\\s*(am|pm)\\b/i);
+  const time24 = message.match(/\\b([0-9]{1,2}):([0-9]{2})\\b/);
+  if (time12) {
+    let h = parseInt(time12[1], 10);
+    const m = time12[2] ? parseInt(time12[2], 10) : 0;
+    const meridiem = time12[3].toLowerCase();
+    if (meridiem === 'pm' && h < 12) h += 12;
+    if (meridiem === 'am' && h === 12) h = 0;
+    hours = h; minutes = m;
+  } else if (time24) {
+    hours = parseInt(time24[1], 10);
+    minutes = parseInt(time24[2], 10);
   }
-  if (/\\bmidnight\\b/.test(lower)) {
-    hour = 0;
-    minute = 0;
-  }
-  if (/\\bmorning\\b/.test(lower)) {
-    hour = 9;
-  }
-  if (/\\bafternoon\\b/.test(lower)) {
-    hour = 14;
-  }
-  if (/\\bevening\\b/.test(lower)) {
-    hour = 17;
-  }
-  // Parse explicit times such as 2pm, 14:30, 2:15 pm, etc.
-  const timeRegex = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i;
-  const timeMatch = message.match(timeRegex);
-  if (timeMatch) {
-    hour = parseInt(timeMatch[1], 10);
-    minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
-    const meridiem = timeMatch[3] ? timeMatch[3].toLowerCase() : null;
-    if (meridiem) {
-      if (meridiem === 'pm' && hour < 12) {
-        hour += 12;
-      }
-      if (meridiem === 'am' && hour === 12) {
-        hour = 0;
-      }
-    } else {
-      // If no am/pm, treat early hours (1–7) as afternoon for typical salon hours
-      if (hour < 8) {
-        hour += 12;
-      }
-    }
-  }
-  // Compose a Date using local timezone values
-  const candidate = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), hour, minute, 0);
-  return toISOForTimeZone(candidate, timezone);
+  targetDate.setHours(hours, minutes, 0, 0);
+  return toISOForTimeZone(targetDate, timezone);
 }
 
-// Extracts structured actions from a user message.  Context provides lists
-// of existing clients and appointments to help disambiguate names.  Each
-// returned action has a type and a payload dictionary with only primitive
-// values.  The supported types are createClient, createAppointment,
-// deleteAppointment and deleteClient.
+// Parses the user's message and synthesises a list of actions.  Actions are
+// objects with a `type` (createClient, createAppointment, deleteAppointment,
+// deleteClient) and a `payload`.  The timezone and nowISO parameters are
+// used to parse relative date phrases.  The context argument should include
+// arrays of client names and existing appointments.  Only one appointment is
+// created per message.
 function extractActions(message, timezone, nowISO, context) {
   const actions = [];
   const lower = message.toLowerCase();
@@ -456,8 +328,8 @@ function extractActions(message, timezone, nowISO, context) {
   // -----------------------------------------------------------------------
   // Create Client detection
   // Look for phrases like "add client Sarah", "create client John Doe", or
-  // "new client Eve".  We also support synonyms like "register client"
-  // or "sign up client".  Multiple clients can be captured.
+  // "new client Eve".  We also support synonyms like "register client" or
+  // "sign up client".  Multiple clients can be captured.
   const clientCreateRegex = /(add|create|new|register|signup|sign\s*up)\s+client\s+([A-Z][\w'\- ]*(?:\s+[A-Z][\w'\- ]*)?)/gi;
   let match;
   while ((match = clientCreateRegex.exec(message)) !== null) {
@@ -499,14 +371,9 @@ function extractActions(message, timezone, nowISO, context) {
     const simpleDeleteRegex = /(delete|remove)\s+([A-Z][\w'\- ]*(?:\s+[A-Z][\w'\- ]*)?)/gi;
     let m;
     while ((m = simpleDeleteRegex.exec(message)) !== null) {
-      const verb = m[1].toLowerCase();
       const target = m[2].trim();
-      // Ignore if the word 'appointment' or 'appt' appears within 5 words
-      const surrounding = message
-        .slice(Math.max(0, m.index - 30), m.index + m[0].length + 30)
-        .toLowerCase();
+      const surrounding = message.slice(Math.max(0, m.index - 30), m.index + m[0].length + 30).toLowerCase();
       if (/\bappointment\b|\bappt\b/.test(surrounding)) continue;
-      // Only trigger if the target matches a known client
       const matched = clients.find(c => c.toLowerCase() === target.toLowerCase());
       if (matched) {
         actions.push({ type: 'deleteClient', payload: { name: matched } });
@@ -521,7 +388,6 @@ function extractActions(message, timezone, nowISO, context) {
   // derived from any service keyword mentioned; otherwise "Appointment".
   if (/(delete|remove|cancel).*\b(appointment|appt)\b/i.test(lower)) {
     const dateISO = parseDateTime(message, timezone, nowISO);
-    // Determine client name: prefer explicit mention of a known client
     let targetName = null;
     for (const nm of clients) {
       if (lower.includes(nm.toLowerCase())) {
@@ -530,25 +396,22 @@ function extractActions(message, timezone, nowISO, context) {
       }
     }
     const service = extractService(lower) || 'Appointment';
-    actions.push({
-      type: 'deleteAppointment',
-      payload: { clientName: targetName, dateISO, title: service }
-    });
+    actions.push({ type: 'deleteAppointment', payload: { clientName: targetName, dateISO, title: service } });
   }
   // -----------------------------------------------------------------------
   // Create Appointment detection
   // Ignore if the message is clearly a deletion request.  Otherwise
-  // recognise words like "book", "schedule", "set up", "add", or
-  // "create" in combination with typical appointment/service terms.  We
-  // extract the date/time, service, price, duration and client name.  If
-  // the client is not in the provided context we also propose creating the
-  // client first.  Only one appointment per message is generated.
+  // recognise words like "book", "schedule", "set up", "setup", "add",
+  // "create", "reserve", "arrange", "make", "fix", or "set" in combination
+  // with typical appointment/service terms.  We extract the date/time,
+  // service, price, duration and client name.  If the client is not in the
+  // provided context we also propose creating the client first.  Only one
+  // appointment per message is generated.
   if (!/(delete|remove|cancel).*\b(appointment|appt)\b/i.test(lower)) {
     const createAppPattern = /(book|schedule|set\s*up|setup|add|create|reserve|arrange|make|fix|set)/i;
     const appointmentHint = /(appointment|appt|hair|color|colour|cut|trim|balayage|highlights|highlight|root|toner|gloss|style|bleach|perm|relaxer)/i;
     if (createAppPattern.test(lower) && appointmentHint.test(lower)) {
       const dateISO = parseDateTime(message, timezone, nowISO);
-      // Determine client name: search known clients first
       let name = null;
       for (const nm of clients) {
         if (lower.includes(nm.toLowerCase())) {
@@ -556,36 +419,28 @@ function extractActions(message, timezone, nowISO, context) {
           break;
         }
       }
-      // If no known client found, look for capitalised names in the message.
       if (!name) {
         const candidates = findPotentialNames(message);
         for (const cand of candidates) {
           const candLower = cand.toLowerCase();
-          // Skip weekday names and relative phrases
           const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday','today','tomorrow','tonight'];
           if (days.includes(candLower)) continue;
-          // Skip known service keywords
           if (SERVICE_KEYWORDS.some(s => s.toLowerCase() === candLower)) continue;
-          // Skip generic words
           const generic = ['appointment','hair','client'];
           if (generic.includes(candLower)) continue;
-          // Skip candidates whose first word is a known verb (e.g. Book Sarah)
           const firstWord = cand.split(/\s+/)[0].toLowerCase();
-          const verbs = ['book','schedule','set','setup','add','create'];
+          const verbs = ['book','schedule','set','setup','add','create','reserve','arrange','make','fix'];
           if (verbs.includes(firstWord)) continue;
           name = cand;
           break;
         }
       }
-      // Identify the service title
       const service = extractService(lower) || 'Appointment';
-      // Parse price (e.g. $275 or 275 dollars)
       let price;
       const priceMatch = message.match(/\$\s*([0-9]+(?:\.[0-9]+)?)/);
       if (priceMatch) {
         price = parseFloat(priceMatch[1]);
       }
-      // Parse duration (e.g. 2.5 hours, 90 minutes)
       let durationMinutes;
       const hrMatch = lower.match(/([0-9]*\.?[0-9]+)\s*(hours|hrs|hr|h)\b/);
       if (hrMatch) {
@@ -596,14 +451,11 @@ function extractActions(message, timezone, nowISO, context) {
           durationMinutes = parseFloat(minMatch[1]);
         }
       }
-      // Build appointment payload
       const payload = { title: service, dateISO, clientName: name };
       if (typeof price !== 'undefined') payload.price = price;
       if (typeof durationMinutes !== 'undefined') payload.durationMinutes = durationMinutes;
       actions.push({ type: 'createAppointment', payload });
-      // If the client is specified but not in context, propose creating it
       if (name && !clients.some(c => c.toLowerCase() === name.toLowerCase())) {
-        // Prepend so that the client is created before the appointment
         actions.unshift({ type: 'createClient', payload: { name } });
       }
     }
@@ -611,23 +463,53 @@ function extractActions(message, timezone, nowISO, context) {
   return actions;
 }
 
-// --------------------------------- Routes ----------------------------------
-// Basic health and brand endpoints remain unchanged.  They are used by
-// various parts of the Hair Hub app.
-app.get('/health', (_req, res) => {
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.end(JSON.stringify({ ok: true }));
-});
-app.get('/brands', (_req, res) => {
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.end(JSON.stringify({ demi: DEMI_BRANDS, permanent: PERMANENT_BRANDS, semi: SEMI_BRANDS }));
-});
+// ----------------------------- Mini Router ------------------------------
+// A tiny routing layer that mimics a subset of Express.  It supports
+// registering handlers for GET and POST requests and starting an HTTP
+// server.  Each handler receives the raw Node.js req/res objects.
+class MiniApp {
+  constructor() {
+    this.routes = [];
+    this.server = null;
+  }
+  get(path, handler) {
+    this.routes.push({ method: 'GET', path, handler });
+  }
+  post(path, handler) {
+    this.routes.push({ method: 'POST', path, handler });
+  }
+  async handle(req, res) {
+    const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const { pathname } = parsed;
+    for (const route of this.routes) {
+      if (route.method === req.method && route.path === pathname) {
+        return route.handler(req, res);
+      }
+    }
+    res.statusCode = 404;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.end(JSON.stringify({ error: 'not_found' }));
+  }
+  listen(port, callback) {
+    this.server = http.createServer((req, res) => {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        });
+        return res.end();
+      }
+      this.handle(req, res);
+    });
+    this.server.listen(port, callback);
+  }
+}
 
-// ----------------------- Helpers for body parsing --------------------------
+const app = new MiniApp();
+
+// --------------------------- Body Parsing Helper --------------------------
 // Reads and parses JSON from an incoming request.  Rejects if the body is
 // malformed or exceeds 10MB.  Returns an empty object for empty bodies.
 function readJson(req) {
@@ -658,35 +540,36 @@ function readJson(req) {
   });
 }
 
-// Placeholder for the Formula Guru analysis endpoint.  In this simplified
-// implementation we deliberately avoid calling external services (e.g. OpenAI)
-// to comply with the assignment guidelines.  A real implementation would
-// validate formulas, enforce mixing rules, generate developer instructions and
-// respond with analysis results.  Here we simply return an error to indicate
-// that the endpoint is unavailable.
-app.post('/analyze', async (req, res) => {
-  // Set headers for CORS and JSON
+// --------------------------------- Routes ---------------------------------
+// Health check
+app.get('/health', (_req, res) => {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.end(JSON.stringify({ ok: true }));
+});
+
+// Brand list endpoint
+app.get('/brands', (_req, res) => {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.end(JSON.stringify({ demi: DEMI_BRANDS, permanent: PERMANENT_BRANDS, semi: SEMI_BRANDS }));
+});
+
+// Placeholder Formula Guru analysis endpoint
+app.post('/analyze', async (_req, res) => {
   res.statusCode = 501;
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.end(JSON.stringify({ error: 'analyze_not_implemented' }));
 });
 
-// ------------------------------ StylistSync Assistant ----------------------
-// Calendar‑aware, action‑synthesising assistant.  This endpoint takes a
-// natural language message along with optional timezone, nowISO and
-// context (clients and appointments) and returns a reply string, an array
-// of structured actions and an array of warnings (empty in this
-// implementation).  The reply may include informational content based on
-// the question (e.g. mixing ratios) and will mention when actions are
-// proposed.  The client app is responsible for rendering chips and
-// confirming the actions.
+// Assistant endpoint: hair Q&A and action synthesis
 app.post('/assistant', async (req, res) => {
-  // Always set CORS and content type headers
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   try {
-    // Parse the request body as JSON.  If parsing fails, return 400.
     let body;
     try {
       body = await readJson(req);
@@ -702,14 +585,8 @@ app.post('/assistant', async (req, res) => {
       res.statusCode = 400;
       return res.end(JSON.stringify({ error: 'Missing message' }));
     }
-    // Hair/cosmetology Q&A: assemble reply from brand rules if applicable
     const info = detectBrandInfo(message);
-    // Synthesize actions from the message
     const actions = extractActions(message, timezone, nowISO, context);
-    // Build reply.  If info was found, include it; if actions were
-    // synthesized, append a note indicating actions have been proposed.  If
-    // neither information nor actions are found, provide a generic help
-    // message.
     let reply = '';
     if (info) {
       reply += info.trim();
@@ -719,7 +596,7 @@ app.post('/assistant', async (req, res) => {
       reply += 'Here are the proposed actions.';
     }
     if (!reply) {
-      reply = 'I couldn\'t find an answer. Ask me about hair formulas or tell me to add, remove or book appointments.';
+      reply = 'I couldn’t find an answer. Ask me about hair formulas or tell me to add, remove or book appointments.';
     }
     res.statusCode = 200;
     return res.end(JSON.stringify({ reply, actions, warnings: [] }));
@@ -730,8 +607,7 @@ app.post('/assistant', async (req, res) => {
   }
 });
 
-// Start the server unless we are in a test environment.  Express will
-// automatically choose an available port if none is specified.
+// Start the server if not in a test environment.  Use port from env or 3000.
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
