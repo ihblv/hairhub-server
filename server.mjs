@@ -294,8 +294,17 @@ function extractActions(msg, context, timezone, nowIso) {
   return actions;
 }
 
-// Compose a reply and actions for /assistant requests
-function assistantResponse(body) {
+// Compose a reply and actions for /assistant requests.  This function is
+// asynchronous because it may invoke the OpenAI API for fallback Q&A when
+// no actions or brand info is detected locally.  It first performs all
+// local parsing (brand formulas, abilities question and action extraction).
+// If actions are found or a formula answer is returned, it resolves
+// immediately.  Otherwise, it attempts to call OpenAI’s Chat Completions
+// endpoint using the OPENAI_API_KEY from the environment.  If the key
+// isn’t set or the request fails or times out, a generic fallback message
+// is returned.  The returned object always contains reply, actions and
+// warnings keys.
+async function assistantResponse(body) {
   const message = (body.message || '').trim();
   const timezone = body.timezone || 'America/Los_Angeles';
   const nowISO = body.nowISO || new Date().toISOString();
@@ -310,33 +319,69 @@ function assistantResponse(body) {
   if (info.length > 0) {
     return { reply: info.join('\n'), actions: [], warnings: [] };
   }
-  // General knowledge base for common hair questions.  Without access to
-  // external APIs, we answer a few well‑known queries locally.
-  const lowerMsg = message.toLowerCase();
-  if (lowerMsg.includes('who is paul mitchell') || lowerMsg.includes('who is paul mitchel')) {
-    const reply = 'Paul Mitchell was a Scottish–American hairstylist and entrepreneur best known as the co‑founder of the professional hair care company John Paul Mitchell Systems.';
-    return { reply, actions: [], warnings: [] };
-  }
-  if (lowerMsg.includes('ash blonde') || lowerMsg.includes('ashy blonde')) {
-    const reply = 'An ash blonde look usually starts with a light blonde base (level 8–9) and an ash toner to neutralise warm undertones. A common approach is to use a level 9 neutral/ash shade with a 10‑volume developer on pre‑lightened hair. Always adjust the developer strength and processing time based on the hair’s condition.';
-    return { reply, actions: [], warnings: [] };
-  }
-  if (lowerMsg.includes('formula') && info.length === 0) {
-    const reply = 'Hair colour formulas vary depending on the desired level, tone and brand. Try asking about a specific product, brand or shade so I can give you more accurate guidance.';
-    return { reply, actions: [], warnings: [] };
-  }
   // Abilities question
   const lower = message.toLowerCase();
   if (lower.includes('abilities') || lower.includes('what can you do')) {
     const reply = 'I can answer questions about hair colour brands and formulas. I can also help you add, remove or view clients, and schedule, modify or cancel appointments. Just ask me what you need.';
     return { reply, actions: [], warnings: [] };
   }
-  // Synthesize actions
+  // Synthesize actions locally
   const actions = extractActions(message, context, timezone, nowISO);
-  if (actions.length === 0) {
-    return { reply: "I couldn't find an answer. Ask me about hair formulas or tell me to add, remove or book appointments.", actions: [], warnings: [] };
+  if (actions.length > 0) {
+    return { reply: 'Here are the proposed actions.', actions, warnings: [] };
   }
-  return { reply: 'Here are the proposed actions.', actions, warnings: [] };
+  // At this point no local actions or brand info were found.  Attempt to
+  // answer via OpenAI if an API key is configured.  We treat all
+  // other questions—including pricing guidance or general cosmetology
+  // questions—as a free‑form Q&A task.  If no API key is available or
+  // the call fails, we fall back to a generic message.
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return { reply: "I couldn't find an answer. Try rephrasing or ask a specific brand question.", actions: [], warnings: [] };
+  }
+  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  // Construct the system and user messages.  The system prompt defines
+  // StylistSync’s persona and guidelines: it should use brand‑accurate
+  // ratios and developers, include timing ranges and strand test advice,
+  // outline pricing factors without guaranteeing outcomes and avoid
+  // inventing mixing rules.  It should also answer non‑cosmetology
+  // trivia normally.
+  const messages = [
+    {
+      role: 'system',
+      content: `You are StylistSync, an expert salon assistant. Give brand-accurate, manufacturer-safe guidance. When asked for formulas, include brand-correct mixing ratios and developers; include timing ranges, strand tests, and caveats. For pricing questions: outline factors and a reasonable range; do not guarantee outcomes. Never invent developer ratios against manufacturer rules. Add a brief disclaimer for chemical services.`
+    },
+    { role: 'user', content: message }
+  ];
+  try {
+    // Implement a 10 s timeout on the fetch using AbortController
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({ model, messages }),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      throw new Error(`OpenAI responded with status ${response.status}`);
+    }
+    const data = await response.json();
+    const reply = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (typeof reply === 'string' && reply.trim().length > 0) {
+      // Trim whitespace and return without actions
+      return { reply: reply.trim(), actions: [], warnings: [] };
+    }
+  } catch (err) {
+    // Log the error but do not expose internals to clients
+    console.error('GPT fallback error', err);
+  }
+  // Fallback if anything goes wrong
+  return { reply: "I couldn't find an answer. Try rephrasing or ask a specific brand question.", actions: [], warnings: [] };
 }
 
 // HTTP server
@@ -371,9 +416,15 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: 'invalid_json' }));
         return;
       }
-      const response = assistantResponse(body);
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify(response));
+      try {
+        const responseObj = await assistantResponse(body);
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(responseObj));
+      } catch (err) {
+        console.error(err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'server_error' }));
+      }
       return;
     }
     // Unknown endpoint
