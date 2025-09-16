@@ -310,6 +310,21 @@ function assistantResponse(body) {
   if (info.length > 0) {
     return { reply: info.join('\n'), actions: [], warnings: [] };
   }
+  // General knowledge base for common hair questions.  Without access to
+  // external APIs, we answer a few well‑known queries locally.
+  const lowerMsg = message.toLowerCase();
+  if (lowerMsg.includes('who is paul mitchell') || lowerMsg.includes('who is paul mitchel')) {
+    const reply = 'Paul Mitchell was a Scottish–American hairstylist and entrepreneur best known as the co‑founder of the professional hair care company John Paul Mitchell Systems.';
+    return { reply, actions: [], warnings: [] };
+  }
+  if (lowerMsg.includes('ash blonde') || lowerMsg.includes('ashy blonde')) {
+    const reply = 'An ash blonde look usually starts with a light blonde base (level 8–9) and an ash toner to neutralise warm undertones. A common approach is to use a level 9 neutral/ash shade with a 10‑volume developer on pre‑lightened hair. Always adjust the developer strength and processing time based on the hair’s condition.';
+    return { reply, actions: [], warnings: [] };
+  }
+  if (lowerMsg.includes('formula') && info.length === 0) {
+    const reply = 'Hair colour formulas vary depending on the desired level, tone and brand. Try asking about a specific product, brand or shade so I can give you more accurate guidance.';
+    return { reply, actions: [], warnings: [] };
+  }
   // Abilities question
   const lower = message.toLowerCase();
   if (lower.includes('abilities') || lower.includes('what can you do')) {
