@@ -294,17 +294,8 @@ function extractActions(msg, context, timezone, nowIso) {
   return actions;
 }
 
-// Compose a reply and actions for /assistant requests.  This function is
-// asynchronous because it may invoke the OpenAI API for fallback Q&A when
-// no actions or brand info is detected locally.  It first performs all
-// local parsing (brand formulas, abilities question and action extraction).
-// If actions are found or a formula answer is returned, it resolves
-// immediately.  Otherwise, it attempts to call OpenAI’s Chat Completions
-// endpoint using the OPENAI_API_KEY from the environment.  If the key
-// isn’t set or the request fails or times out, a generic fallback message
-// is returned.  The returned object always contains reply, actions and
-// warnings keys.
-async function assistantResponse(body) {
+// Compose a reply and actions for /assistant requests
+function assistantResponse(body) {
   const message = (body.message || '').trim();
   const timezone = body.timezone || 'America/Los_Angeles';
   const nowISO = body.nowISO || new Date().toISOString();
@@ -325,63 +316,12 @@ async function assistantResponse(body) {
     const reply = 'I can answer questions about hair colour brands and formulas. I can also help you add, remove or view clients, and schedule, modify or cancel appointments. Just ask me what you need.';
     return { reply, actions: [], warnings: [] };
   }
-  // Synthesize actions locally
+  // Synthesize actions
   const actions = extractActions(message, context, timezone, nowISO);
-  if (actions.length > 0) {
-    return { reply: 'Here are the proposed actions.', actions, warnings: [] };
+  if (actions.length === 0) {
+    return { reply: "I couldn't find an answer. Ask me about hair formulas or tell me to add, remove or book appointments.", actions: [], warnings: [] };
   }
-  // At this point no local actions or brand info were found.  Attempt to
-  // answer via OpenAI if an API key is configured.  We treat all
-  // other questions—including pricing guidance or general cosmetology
-  // questions—as a free‑form Q&A task.  If no API key is available or
-  // the call fails, we fall back to a generic message.
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return { reply: "I couldn't find an answer. Try rephrasing or ask a specific brand question.", actions: [], warnings: [] };
-  }
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-  // Construct the system and user messages.  The system prompt defines
-  // StylistSync’s persona and guidelines: it should use brand‑accurate
-  // ratios and developers, include timing ranges and strand test advice,
-  // outline pricing factors without guaranteeing outcomes and avoid
-  // inventing mixing rules.  It should also answer non‑cosmetology
-  // trivia normally.
-  const messages = [
-    {
-      role: 'system',
-      content: `You are StylistSync, an expert salon assistant. Give brand-accurate, manufacturer-safe guidance. When asked for formulas, include brand-correct mixing ratios and developers; include timing ranges, strand tests, and caveats. For pricing questions: outline factors and a reasonable range; do not guarantee outcomes. Never invent developer ratios against manufacturer rules. Add a brief disclaimer for chemical services.`
-    },
-    { role: 'user', content: message }
-  ];
-  try {
-    // Implement a 10 s timeout on the fetch using AbortController
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({ model, messages }),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    if (!response.ok) {
-      throw new Error(`OpenAI responded with status ${response.status}`);
-    }
-    const data = await response.json();
-    const reply = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    if (typeof reply === 'string' && reply.trim().length > 0) {
-      // Trim whitespace and return without actions
-      return { reply: reply.trim(), actions: [], warnings: [] };
-    }
-  } catch (err) {
-    // Log the error but do not expose internals to clients
-    console.error('GPT fallback error', err);
-  }
-  // Fallback if anything goes wrong
-  return { reply: "I couldn't find an answer. Try rephrasing or ask a specific brand question.", actions: [], warnings: [] };
+  return { reply: 'Here are the proposed actions.', actions, warnings: [] };
 }
 
 // HTTP server
@@ -407,6 +347,52 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ demi: DEMI_LIST, permanent: PERMANENT_BRANDS, semi: SEMI_BRANDS }));
       return;
     }
+    // Proxy Formula Guru photo analysis to external service.  When a POST
+    // request is made to /analyze, forward the multipart body and headers
+    // to the configured upstream ANALYZE_URL (default: hairhub-server.onrender.com/analyze).
+    if (req.method === 'POST' && path === '/analyze') {
+      // Read the entire request body into a Buffer.  This is safe for the small images
+      // used by the app but may need streaming for very large payloads.
+      const chunks = [];
+      try {
+        for await (const chunk of req) {
+          chunks.push(chunk);
+        }
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'proxy_error', detail: 'Failed to read request body' }));
+        return;
+      }
+      const bodyBuffer = Buffer.concat(chunks);
+      const upstream = process.env.ANALYZE_URL || 'https://hairhub-server.onrender.com/analyze';
+      // Use fetch to proxy the request to the upstream analysis service.  Preserve
+      // the original Content-Type so that multipart boundaries are forwarded
+      // correctly.
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        const upstreamRes = await fetch(upstream, {
+          method: 'POST',
+          headers: {
+            'Content-Type': req.headers['content-type'] || 'application/octet-stream'
+          },
+          body: bodyBuffer,
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+        const respBuffer = Buffer.from(await upstreamRes.arrayBuffer());
+        // Mirror the upstream status and content-type
+        res.writeHead(upstreamRes.status, {
+          'Content-Type': upstreamRes.headers.get('content-type') || 'application/json'
+        });
+        res.end(respBuffer);
+      } catch (err) {
+        const status = err.name === 'AbortError' ? 504 : 502;
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'analyze_proxy_failed', detail: String(err.message || err) }));
+      }
+      return;
+    }
     if (req.method === 'POST' && path === '/assistant') {
       let body;
       try {
@@ -416,14 +402,61 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: 'invalid_json' }));
         return;
       }
-      try {
-        const responseObj = await assistantResponse(body);
+      // Compute the local response synchronously
+      const local = assistantResponse(body);
+      // If there are actions or a meaningful local reply, return immediately.
+      const fallback = "I couldn't find an answer. Ask me about hair formulas or tell me to add, remove or book appointments.";
+      if (local.actions && local.actions.length > 0) {
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify(responseObj));
+        res.end(JSON.stringify(local));
+        return;
+      }
+      if (local.reply && local.reply.trim() && local.reply !== fallback) {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(local));
+        return;
+      }
+      // No actions and fallback reply → call OpenAI for a richer answer.
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ reply: "I couldn’t find an answer. Try rephrasing or ask a specific brand question.", actions: [], warnings: [] }));
+        return;
+      }
+      const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+      const systemPrompt = `You are StylistSync, an expert salon assistant. Give brand-accurate, manufacturer-safe guidance. When asked for formulas, include brand-correct mixing ratios and developers; include timing ranges, strand tests, and caveats. For pricing questions: outline factors and a reasonable range; do not guarantee outcomes. Never invent developer ratios against manufacturer rules. Add a brief disclaimer for chemical services. If asked non-cosmetology trivia like 'who is Paul Mitchell', just answer normally.`;
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: String(body.message || '') }
+      ];
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        const gptRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature: 0.3
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+        if (!gptRes.ok) {
+          throw new Error(`OpenAI HTTP ${gptRes.status}`);
+        }
+        const gptData = await gptRes.json();
+        const reply = gptData.choices?.[0]?.message?.content?.trim() || "I couldn’t find an answer. Try rephrasing or ask a specific brand question.";
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ reply, actions: [], warnings: [] }));
       } catch (err) {
-        console.error(err);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'server_error' }));
+        const status = err.name === 'AbortError' ? 504 : 502;
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ reply: "I couldn’t find an answer. Try rephrasing or ask a specific brand question.", actions: [], warnings: [] }));
       }
       return;
     }
