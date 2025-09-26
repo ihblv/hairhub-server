@@ -84,6 +84,29 @@ const CANCEL_PHRASES = ['cancel appointment', 'cancel', 'delete appointment', 'r
 const CREATE_CLIENT_PHRASES = ['new client', 'add client', 'add a client', 'add new client', 'create client', 'register client'];
 const DELETE_CLIENT_PHRASES = ['delete client', 'remove client', 'cancel client'];
 
+// Words that typically introduce a question.  When a message starts with
+// any of these tokens or ends with a question mark, we treat it as
+// question‑like and avoid booking actions unless an explicit verb like
+// "add" or "book" is present.  This prevents phrases such as "How many
+// appointments" or "What’s next" from being misinterpreted as commands.
+const QUESTION_LEADS = ['how', 'what', 'who', 'when', 'where', 'why', 'show', 'tell', 'list', 'give me', 'display'];
+
+/**
+ * Determine if a message is question‑like.  Returns true if the
+ * lowercased text starts with one of the question lead phrases or ends
+ * with a question mark.  Used to suppress action extraction for pure
+ * inquiries.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isQuestionLike(text) {
+  const t = String(text || '').trim().toLowerCase();
+  // Check if the message ends with a question mark
+  if (t.endsWith('?')) return true;
+  // Check for any lead words at the start of the message
+  return QUESTION_LEADS.some(k => t.startsWith(k + ' '));
+}
+
 // Sets used to ignore certain tokens when extracting names
 const GENERIC_WORDS = new Set(['i','me','you','we','us','they','them','he','she','it','my','our','your','their','clients','client','appointment','appointments','book','schedule','cancel','delete','add','new','remove','for','at','on','in','the','a','an']);
 const DAYS_OF_WEEK = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
@@ -480,25 +503,31 @@ function readJson(req) {
 function findPotentialNames(text) {
   const names = [];
   const words = text.split(/\s+/);
-  for (const token of words) {
+  // Set of common question words to ignore even if capitalised.  This
+  // prevents "How" or "What’s" from being treated as client names.
+  const QUESTION_WORDS = new Set(['How','What','Who','When','Where','Why','Show','Tell','List','Give','Display','Upcoming','Next']);
+  words.forEach((token, index) => {
     let word = token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
-    if (!word) continue;
+    if (!word) return;
     const first = word[0];
-    if (first !== first.toUpperCase()) continue;
+    if (first !== first.toUpperCase()) return;
+    // Ignore the first capitalised word if it's a question lead
+    if (index === 0 && QUESTION_WORDS.has(word)) return;
     // Strip possessive endings
     if (word.endsWith("'s")) {
       word = word.slice(0, -2);
     }
     const cleaned = word.replace(/[^a-zA-Z]/g, '');
     const lower = cleaned.toLowerCase();
-    if (!cleaned) continue;
-    if (VERB_SET.has(lower) || DAYS_OF_WEEK.includes(lower) || SERVICE_SET.has(lower) || GENERIC_WORDS.has(lower) || BRAND_WORDS_SET.has(lower)) {
-      continue;
+    if (!cleaned) return;
+    // Skip if it's in our ignore sets or question words
+    if (VERB_SET.has(lower) || DAYS_OF_WEEK.includes(lower) || SERVICE_SET.has(lower) || GENERIC_WORDS.has(lower) || BRAND_WORDS_SET.has(lower) || QUESTION_WORDS.has(cleaned)) {
+      return;
     }
     if (!names.find(n => n.toLowerCase() === word.toLowerCase())) {
       names.push(word);
     }
-  }
+  });
   return names;
 }
 
@@ -729,6 +758,23 @@ function detectBrandInfo(msg) {
 function extractActions(msg, context, timezone, nowIso) {
   const actions = [];
   const lower = msg.toLowerCase();
+  // Determine if the message is question‑like and whether it contains
+  // booking/cancel verbs or service keywords.  This guards against
+  // extracting actions from pure questions (e.g. "How many appointments")
+  // and ensures we only process messages that clearly intend to book
+  // appointments or mention a service.
+  const hasBookingVerb = BOOKING_PHRASES.some(ph => lower.includes(ph));
+  const hasServiceWord = SERVICE_KEYWORDS.some(k => lower.includes(k));
+  const hasCancelVerb = CANCEL_PHRASES.some(ph => lower.includes(ph));
+  const questiony = isQuestionLike(msg);
+  if (questiony && !hasBookingVerb) {
+    // Question without booking intent → no actions
+    return [];
+  }
+  if (!hasBookingVerb && !hasServiceWord && !hasCancelVerb) {
+    // No actionable verbs or service words → skip
+    return [];
+  }
   // Determine intent flags
   const isBooking = BOOKING_PHRASES.some(ph => lower.includes(ph));
   const isCancelAppt = CANCEL_PHRASES.some(ph => lower.includes(ph));
@@ -759,7 +805,14 @@ function extractActions(msg, context, timezone, nowIso) {
     if (clientName && !context.clients.some(n => n.toLowerCase() === clientName.toLowerCase())) {
       actions.push({ type: 'createClient', payload: { name: clientName } });
     }
-    const payload = { title: service ? service.charAt(0).toUpperCase() + service.slice(1) : 'Appointment' };
+    // Build the appointment payload.  Prefer a properly cased service name
+    // over the generic "Appointment".  The title falls back to the
+    // service word when present; otherwise uses the word "Appointment".
+    const rawTitle = service ? service : 'Appointment';
+    const title = (rawTitle.toLowerCase() === 'appointment' && service)
+      ? properCase(service)
+      : properCase(rawTitle);
+    const payload = { title };
     if (dateISO) payload.dateISO = dateISO;
     if (clientName) payload.clientName = clientName;
     if (service) payload.serviceType = service;
@@ -781,7 +834,13 @@ function extractActions(msg, context, timezone, nowIso) {
     if (!clientName && names.length > 0) {
       clientName = names[names.length - 1];
     }
-    const payload = { title: service ? service.charAt(0).toUpperCase() + service.slice(1) : 'Appointment' };
+    // Build the appointment payload for deletion.  Like booking, prefer
+    // proper‑cased service names over the generic "Appointment".
+    const rawTitle = service ? service : 'Appointment';
+    const title = (rawTitle.toLowerCase() === 'appointment' && service)
+      ? properCase(service)
+      : properCase(rawTitle);
+    const payload = { title };
     if (dateISO) payload.dateISO = dateISO;
     if (clientName) payload.clientName = clientName;
     actions.push({ type: 'deleteAppointment', payload });
@@ -852,6 +911,20 @@ function assistantResponse(body) {
     const aggregatesReply = handleAggregates(lower, context);
     if (aggregatesReply) {
       return { reply: aggregatesReply, actions: [], warnings: [] };
+    }
+  }
+
+  // After handling counts/listings/aggregates, if the message is still
+  // question‑like and lacks explicit booking or cancel verbs, skip
+  // action extraction and respond with the friendly fallback.  This
+  // prevents queries like "How many appointments" from creating
+  // bogus clients or appointments.
+  {
+    const questiony = isQuestionLike(message);
+    const hasBookingVerb = BOOKING_PHRASES.some(ph => lower.includes(ph));
+    const hasCancelVerb = CANCEL_PHRASES.some(ph => lower.includes(ph));
+    if (questiony && !hasBookingVerb && !hasCancelVerb) {
+      return { reply: "Hmm, I didn’t catch that. Try asking me about formulas, clients, or appointments.", actions: [], warnings: [] };
     }
   }
   // Synthesize actions
